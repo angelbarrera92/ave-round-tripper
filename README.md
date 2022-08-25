@@ -203,3 +203,7 @@ access other sites protected by akamai:
 - [elcorteingles.es](https://www.elcorteingles.es)
 
 are a few examples of sites protected by akamai.
+
+# License
+
+[MIT License](LICENSE)
