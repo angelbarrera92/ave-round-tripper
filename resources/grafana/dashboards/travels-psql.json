@@ -1,0 +1,430 @@
+{
+    "annotations": {
+        "list": [
+            {
+                "builtIn": 1,
+                "datasource": {
+                    "type": "datasource",
+                    "uid": "grafana"
+                },
+                "enable": true,
+                "hide": true,
+                "iconColor": "rgba(0, 211, 255, 1)",
+                "name": "Annotations & Alerts",
+                "target": {
+                    "limit": 100,
+                    "matchAny": false,
+                    "tags": [],
+                    "type": "dashboard"
+                },
+                "type": "dashboard"
+            }
+        ]
+    },
+    "description": "Business trip planner",
+    "editable": true,
+    "fiscalYearStartMonth": 0,
+    "graphTooltip": 0,
+    "links": [],
+    "liveNow": false,
+    "panels": [
+        {
+            "datasource": {
+                "type": "postgres",
+                "uid": "PA942B37CCFAF5A81"
+            },
+            "gridPos": {
+                "h": 5,
+                "w": 24,
+                "x": 0,
+                "y": 0
+            },
+            "id": 12,
+            "options": {
+                "content": "<center>{{table}} updated {{update_date}}</center>",
+                "defaultContent": "The query didn't return any results.",
+                "everyRow": true
+            },
+            "targets": [
+                {
+                    "datasource": {
+                        "type": "postgres",
+                        "uid": "PA942B37CCFAF5A81"
+                    },
+                    "format": "table",
+                    "group": [],
+                    "metricColumn": "none",
+                    "rawQuery": true,
+                    "rawSql": "SELECT metadata.table,\n       to_char(metadata.update_date, 'Day DD Month YYYY HH24:MM:SS') AS update_date\nFROM metadata;",
+                    "refId": "A",
+                    "select": [
+                        [
+                            {
+                                "params": [
+                                    "price"
+                                ],
+                                "type": "column"
+                            }
+                        ]
+                    ],
+                    "table": "rooms",
+                    "timeColumn": "arrival_date",
+                    "timeColumnType": "timestamp",
+                    "where": [
+                        {
+                            "name": "$__timeFilter",
+                            "params": [],
+                            "type": "macro"
+                        }
+                    ]
+                }
+            ],
+            "title": "Last Update",
+            "transparent": true,
+            "type": "marcusolsson-dynamictext-panel"
+        },
+        {
+            "datasource": {
+                "type": "postgres",
+                "uid": "PA942B37CCFAF5A81"
+            },
+            "fieldConfig": {
+                "defaults": {
+                    "color": {
+                        "mode": "fixed"
+                    },
+                    "custom": {
+                        "align": "auto",
+                        "displayMode": "auto",
+                        "inspect": false
+                    },
+                    "decimals": 2,
+                    "mappings": [],
+                    "thresholds": {
+                        "mode": "absolute",
+                        "steps": [
+                            {
+                                "color": "green",
+                                "value": null
+                            }
+                        ]
+                    },
+                    "unit": "currencyEUR"
+                },
+                "overrides": [
+                    {
+                        "matcher": {
+                            "id": "byName",
+                            "options": "Round Trip"
+                        },
+                        "properties": [
+                            {
+                                "id": "custom.width",
+                                "value": 846
+                            }
+                        ]
+                    }
+                ]
+            },
+            "gridPos": {
+                "h": 12,
+                "w": 24,
+                "x": 0,
+                "y": 5
+            },
+            "id": 14,
+            "options": {
+                "footer": {
+                    "fields": "",
+                    "reducer": [
+                        "sum"
+                    ],
+                    "show": false
+                },
+                "showHeader": true,
+                "sortBy": []
+            },
+            "pluginVersion": "9.0.7",
+            "targets": [
+                {
+                    "datasource": {
+                        "type": "postgres",
+                        "uid": "PA942B37CCFAF5A81"
+                    },
+                    "format": "table",
+                    "group": [],
+                    "metricColumn": "none",
+                    "rawQuery": true,
+                    "rawSql": "SELECT concat(to_char(t1.departure_date, 'Day DD/MM/YYYY'), ' ', t1.departure_station, ' - ', t1.return_station, ' ', to_char(t1.departure_date, 'HH24:MI'), ' - ', to_char(t1.return_date, 'HH24:MI')) AS \"Round Trip\",\n       t1.total_price AS current_price,\n       max(t2.total_price) AS max_price,\n       min(t2.total_price) AS min_price\nFROM roundtrips t1,\n     roundtripsts t2\nWHERE t1.departure_station = t2.departure_station\n  AND t1.departure_date = t2.departure_date\n  AND t1.return_station = t2.return_station\n  AND t1.return_date = t2.return_date\n  AND t1.departure_date >= $__timeFrom()\n  AND t1.departure_date < $__timeTo()\n  AND t1.total_price <= $maxprice\nGROUP BY t1.departure_date,\n         t1.departure_station,\n         t1.return_date,\n         t1.return_station,\n         t1.total_price\nORDER BY t1.departure_date ASC,\n         t1.return_date ASC;",
+                    "refId": "A",
+                    "select": [
+                        [
+                            {
+                                "params": [
+                                    "price"
+                                ],
+                                "type": "column"
+                            }
+                        ]
+                    ],
+                    "table": "rooms",
+                    "timeColumn": "arrival_date",
+                    "timeColumnType": "timestamp",
+                    "where": [
+                        {
+                            "name": "$__timeFilter",
+                            "params": [],
+                            "type": "macro"
+                        }
+                    ]
+                }
+            ],
+            "title": "Round Trip",
+            "type": "table"
+        },
+        {
+            "datasource": {
+                "type": "postgres",
+                "uid": "PA942B37CCFAF5A81"
+            },
+            "description": "",
+            "fieldConfig": {
+                "defaults": {
+                    "color": {
+                        "mode": "thresholds"
+                    },
+                    "mappings": [],
+                    "thresholds": {
+                        "mode": "absolute",
+                        "steps": [
+                            {
+                                "color": "green",
+                                "value": null
+                            },
+                            {
+                                "color": "red",
+                                "value": 80
+                            }
+                        ]
+                    },
+                    "unit": "currencyEUR"
+                },
+                "overrides": []
+            },
+            "gridPos": {
+                "h": 32,
+                "w": 24,
+                "x": 0,
+                "y": 17
+            },
+            "id": 10,
+            "options": {
+                "autoScroll": false,
+                "descriptionField": "kind",
+                "endTimeField": "end",
+                "labelFields": [
+                    "kind"
+                ],
+                "quickLinks": false,
+                "textField": "title",
+                "timeField": "ini"
+            },
+            "targets": [
+                {
+                    "datasource": {
+                        "type": "postgres",
+                        "uid": "PA942B37CCFAF5A81"
+                    },
+                    "format": "table",
+                    "group": [],
+                    "metricColumn": "none",
+                    "rawQuery": true,
+                    "rawSql": "SELECT departure_timestamp  AS t,\n       departure_date as ini,\n       departure_date as end,\n       CONCAT(\n        to_char(departure_date, 'HH24:MI'), '-', to_char(arrival_date, 'HH24:MI'), '. ', price, '€'\n       ) AS title,\n       kind\nFROM trains\nWHERE departure_date >= $__timeFrom()\n  AND departure_date < $__timeTo()\n  AND origin_station = 'Madrid'\n  AND destination_station = 'Zaragoza'\n  AND price IS NOT NULL\n  AND price < $madprice\n  AND CAST(to_char(departure_date, 'HH24') AS DECIMAL)<$before;",
+                    "refId": "A",
+                    "select": [
+                        [
+                            {
+                                "params": [
+                                    "price"
+                                ],
+                                "type": "column"
+                            }
+                        ]
+                    ],
+                    "table": "rooms",
+                    "timeColumn": "arrival_date",
+                    "timeColumnType": "timestamp",
+                    "where": [
+                        {
+                            "name": "$__timeFilter",
+                            "params": [],
+                            "type": "macro"
+                        }
+                    ]
+                },
+                {
+                    "datasource": {
+                        "type": "postgres",
+                        "uid": "PA942B37CCFAF5A81"
+                    },
+                    "format": "table",
+                    "group": [],
+                    "hide": false,
+                    "metricColumn": "none",
+                    "rawQuery": true,
+                    "rawSql": "SELECT departure_timestamp AS t,\n       departure_date as ini,\n       departure_date as end,\n       CONCAT(\n        to_char(departure_date, 'HH24:MI'), '-', to_char(arrival_date, 'HH24:MI'), '. ', price, '€'\n       ) AS title,\n       kind\nFROM trains\nWHERE departure_date >= $__timeFrom()\n  AND departure_date < $__timeTo()\n  AND origin_station = 'Zaragoza'\n  AND destination_station = 'Madrid'\n  AND price IS NOT NULL\n  AND price < $zaprice\n  AND CAST(to_char(departure_date, 'HH24') AS DECIMAL)>=$after;\n",
+                    "refId": "B",
+                    "select": [
+                        [
+                            {
+                                "params": [
+                                    "price"
+                                ],
+                                "type": "column"
+                            }
+                        ]
+                    ],
+                    "table": "rooms",
+                    "timeColumn": "arrival_date",
+                    "timeColumnType": "timestamp",
+                    "where": [
+                        {
+                            "name": "$__timeFilter",
+                            "params": [],
+                            "type": "macro"
+                        }
+                    ]
+                }
+            ],
+            "title": "Travel (Madrid - Zaragoza)",
+            "type": "marcusolsson-calendar-panel"
+        }
+    ],
+    "refresh": "10m",
+    "schemaVersion": 36,
+    "style": "dark",
+    "tags": [],
+    "templating": {
+        "list": [
+            {
+                "current": {
+                    "selected": true,
+                    "text": "7",
+                    "value": "7"
+                },
+                "hide": 0,
+                "label": "From Madrid before",
+                "name": "before",
+                "options": [
+                    {
+                        "selected": true,
+                        "text": "7",
+                        "value": "7"
+                    }
+                ],
+                "query": "7",
+                "skipUrlSync": false,
+                "type": "textbox"
+            },
+            {
+                "current": {
+                    "selected": false,
+                    "text": "15",
+                    "value": "15"
+                },
+                "hide": 0,
+                "label": "From Zaragoza after",
+                "name": "after",
+                "options": [
+                    {
+                        "selected": true,
+                        "text": "15",
+                        "value": "15"
+                    }
+                ],
+                "query": "15",
+                "skipUrlSync": false,
+                "type": "textbox"
+            },
+            {
+                "current": {
+                    "selected": false,
+                    "text": "30",
+                    "value": "30"
+                },
+                "hide": 0,
+                "label": "From Madrid max price",
+                "name": "madprice",
+                "options": [
+                    {
+                        "selected": true,
+                        "text": "30",
+                        "value": "30"
+                    }
+                ],
+                "query": "30",
+                "skipUrlSync": false,
+                "type": "textbox"
+            },
+            {
+                "current": {
+                    "selected": false,
+                    "text": "30",
+                    "value": "30"
+                },
+                "hide": 0,
+                "label": "From Zaragoza max price",
+                "name": "zaprice",
+                "options": [
+                    {
+                        "selected": true,
+                        "text": "30",
+                        "value": "30"
+                    }
+                ],
+                "query": "30",
+                "skipUrlSync": false,
+                "type": "textbox"
+            },
+            {
+                "current": {
+                    "selected": false,
+                    "text": "40",
+                    "value": "40"
+                },
+                "description": "Round Trip Max Price",
+                "hide": 0,
+                "label": "Round Trip Max Price",
+                "name": "maxprice",
+                "options": [
+                    {
+                        "selected": true,
+                        "text": "40",
+                        "value": "40"
+                    }
+                ],
+                "query": "40",
+                "skipUrlSync": false,
+                "type": "textbox"
+            }
+        ]
+    },
+    "time": {
+        "from": "now",
+        "to": "now+90d"
+    },
+    "timepicker": {
+        "refresh_intervals": [
+            "1m",
+            "10m",
+            "1h",
+            "2h",
+            "1d"
+        ]
+    },
+    "timezone": "",
+    "title": "Madrid - Zaragoza (PostgreSQL)",
+    "uid": "ChHGKlv7ZZ",
+    "version": 1,
+    "weekStart": ""
+}

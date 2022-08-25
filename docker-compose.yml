@@ -1,0 +1,34 @@
+---
+version: "3.8"
+
+volumes:
+  pgdata:
+
+services:
+  backend:
+    build: .
+    depends_on:
+      - postgresql
+    env_file:
+      - .pg.env
+    restart: unless-stopped
+    shm_size: 1gb
+  postgresql:
+    image: postgres:14
+    env_file:
+      - .pg.env
+    volumes:
+      - pgdata:/mnt/data
+  grafana:
+    image: grafana/grafana:9.1.1
+    restart: unless-stopped
+    depends_on:
+      - postgresql
+    env_file:
+      - .pg.env
+    volumes:
+      - ./resources/grafana/dashboards:/data/dashboards
+      - ./resources/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources
+      - ./resources/grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards
+    ports:
+      - 3000:3000

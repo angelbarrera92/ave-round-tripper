@@ -1,0 +1,7 @@
+.env
+venv
+grafana-data
+*.log
+*.md
+.*
+trains.sqlite.db

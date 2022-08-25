@@ -1,0 +1,35 @@
+FROM selenium/standalone-chrome:latest
+
+RUN sudo apt-get update \
+    && sudo apt-get install -yqq python3-pip default-libmysqlclient-dev libpq-dev \
+    && sudo rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt requirements.txt
+RUN pip install --upgrade pip && pip install -r requirements.txt
+
+ENV TRAVEL_LOG_LEVEL=info
+ENV TRAVEL_DB_PATH=
+ENV TRAVEL_DB_ENGINE=
+ENV TRAVEL_DB_HOST=
+ENV TRAVEL_DB_PORT=
+ENV TRAVEL_DB_USER=
+ENV TRAVEL_DB_PASSWORD=
+ENV TRAVEL_DB_NAME=
+ENV TRAVEL_NOTIFICATION_TOKEN=
+ENV TRAVEL_NOTIFICATION_CHAT_ID=
+ENV TRAVEL_DEBUG=no
+ENV TRAVEL_FROM=Madrid
+ENV TRAVEL_TO=Zaragoza
+ENV TRAVEL_DAYS=30
+ENV TRAVEL_RENFE_PRICE_CHANGE_NOTIFICATION=False
+ENV ROUND_TRIP_ENABLED=True
+ENV ROUND_TRIP_NOTIFICATION_MAX_PRICE=40
+ENV ROUND_TRIP_ORIGIN_DEPARTURE_TIME=06:30
+ENV ROUND_TRIP_DESTINATION_DEPARTURE_TIME=15:45,17:45,18:26,20:45
+ENV TRAVEL_START_DATE=
+ENV TRAVEL_HISTORICAL_DATA_DAYS=30
+
+COPY src src
+COPY main.py main.py
+
+CMD python3 -u main.py
