@@ -3,7 +3,7 @@ from datetime import datetime, timedelta
 from src.config import RunConfig
 from src.db.metadata import update_metadata
 from src.db.models import RoundTrip, RoundTripTimeSeries, Train
-from sqlalchemy.sql.expression import cast
+from sqlalchemy.sql.expression import cast, func
 import sqlalchemy
 
 # TODO: Think about creating a soft interface like I did for the scrapers
@@ -88,6 +88,19 @@ def _round_trip_trains(cfg: RunConfig, origin: str, fromOriginAt: str, destinati
                 alert = True
                 newRoundTrip = True
                 newPrice = roundTrip.total_price
+
+            # Add a way to notify the user
+            # in case the price is lower than the min price registered
+            cfg.log.debug("ready to find the min price for this round trip")
+            minPrice = cfg.db.session.query(func.min(RoundTripTimeSeries.total_price)).filter(RoundTripTimeSeries.departure_station == originTrain.origin_station).filter(RoundTripTimeSeries.departure_date == originTrain.departure_date).filter(RoundTripTimeSeries.return_station == destinationTrain.origin_station).filter(RoundTripTimeSeries.return_date == destinationTrain.departure_date).scalar()
+            cfg.log.debug(f"minPrice found: {minPrice}")
+            if minPrice and newPrice < minPrice:
+                cfg.log.debug("new min price. enqueue to notify")
+                alert = True
+                newMinPrice = True
+            else:
+                newMinPrice = False
+
             roundTripTS = RoundTripTimeSeries(originTrain.origin_station, originTrain.departure_date, originTrain.price,
                                               destinationTrain.origin_station, destinationTrain.departure_date, destinationTrain.price)
             cfg.db.session.add(roundTripTS)
@@ -100,7 +113,10 @@ def _round_trip_trains(cfg: RunConfig, origin: str, fromOriginAt: str, destinati
 
                 # New notifications
                 # Only if price drop
-                if priceChanged and newPrice < oldPrice:
+                if newMinPrice:
+                    cfg.notification.send(
+                        f"🔥🔥🔥🔥 {targetDateStr} {origin}-{destination} {fromOriginAt}-{fromDestinationAt}. From {oldPrice}€ to {newPrice}€. New min price! 🔥🔥🔥🔥")
+                elif priceChanged and newPrice < oldPrice:
                     cfg.notification.send(
                         f"↓↓↓↓ {targetDateStr} {origin}-{destination} {fromOriginAt}-{fromDestinationAt}. From {oldPrice}€ to {newPrice}€")
                 # Only if its a new opportunity with a low price
