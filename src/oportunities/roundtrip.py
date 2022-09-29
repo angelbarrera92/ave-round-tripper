@@ -3,7 +3,7 @@ from datetime import datetime, timedelta
 from src.config import RunConfig
 from src.db.metadata import update_metadata
 from src.db.models import RoundTrip, RoundTripTimeSeries, Train
-from sqlalchemy.sql.expression import cast
+from sqlalchemy.sql.expression import cast, func
 import sqlalchemy
 
 # TODO: Think about creating a soft interface like I did for the scrapers
@@ -57,6 +57,7 @@ def _round_trip_trains(cfg: RunConfig, origin: str, fromOriginAt: str, destinati
             oldPrice = 0
             newPrice = 0
             newRoundTrip = False
+            newMinPrice = False
             cfg.log.debug("querying to see if was already registered")
             roundTrip = cfg.db.session.query(RoundTrip).get(
                 (originTrain.origin_station, originTrain.departure_date, destinationTrain.origin_station, destinationTrain.departure_date))
@@ -88,6 +89,17 @@ def _round_trip_trains(cfg: RunConfig, origin: str, fromOriginAt: str, destinati
                 alert = True
                 newRoundTrip = True
                 newPrice = roundTrip.total_price
+
+            # Add a way to notify the user
+            # in case the price is lower than the min price registered
+            cfg.log.debug("ready to find the min price for this round trip")
+            minPrice = cfg.db.session.query(func.min(RoundTripTimeSeries.total_price)).filter(RoundTripTimeSeries.departure_station == originTrain.origin_station).filter(RoundTripTimeSeries.departure_date == originTrain.departure_date).filter(RoundTripTimeSeries.return_station == destinationTrain.origin_station).filter(RoundTripTimeSeries.return_date == destinationTrain.departure_date).scalar()
+            cfg.log.debug(f"minPrice found: {minPrice}")
+            if minPrice and roundTrip.total_price < minPrice:
+                cfg.log.debug("new min price. enqueue to notify")
+                alert = True
+                newMinPrice = True
+
             roundTripTS = RoundTripTimeSeries(originTrain.origin_station, originTrain.departure_date, originTrain.price,
                                               destinationTrain.origin_station, destinationTrain.departure_date, destinationTrain.price)
             cfg.db.session.add(roundTripTS)
@@ -107,6 +119,10 @@ def _round_trip_trains(cfg: RunConfig, origin: str, fromOriginAt: str, destinati
                 elif newRoundTrip and (newPrice <= notificationTargetPrice):
                     cfg.notification.send(
                         f"►►►► {targetDateStr} {origin}-{destination} {fromOriginAt}-{fromDestinationAt}. {newPrice}€")
+                # Notify also if its a new min price
+                if newMinPrice:
+                    cfg.notification.send(
+                        f"🔥🔥🔥🔥 {targetDateStr} {origin}-{destination} {fromOriginAt}-{fromDestinationAt}. Cheapest price was {minPrice}€ now is {roundTrip.total_price}€. New min price!")
                 # Old notifications
                 # if priceChanged and newPrice > oldPrice:
                 #     cfg.notification.send(
