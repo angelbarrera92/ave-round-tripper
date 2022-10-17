@@ -66,20 +66,20 @@ def run(runConfig: RunConfig):
             exit(1)
         renfe.save(renfeScrapeConfig, result)
 
-        # Return: Trains From Destination -> To Origin
-        origin_station = travel_to
-        destination_station = travel_from
-        renfeScrapeConfig = RenfeScraperConfig(
-            runConfig, currentDateFormatted, origin_station, destination_station, renfe_price_change_notification)
-        try:
-            result = renfe.scrape(renfeScrapeConfig)
-        except Exception as e:
-            log.error(f"Error scraping {currentDateFormatted} from {origin_station} to {destination_station}")
-            log.error(e)
-            exit(1)
-        renfe.save(renfeScrapeConfig, result)
-
         if round_trip_enabled:
+            # Return: Trains From Destination -> To Origin
+            origin_station = travel_to
+            destination_station = travel_from
+            renfeScrapeConfig = RenfeScraperConfig(
+                runConfig, currentDateFormatted, origin_station, destination_station, renfe_price_change_notification)
+            try:
+                result = renfe.scrape(renfeScrapeConfig)
+            except Exception as e:
+                log.error(f"Error scraping {currentDateFormatted} from {origin_station} to {destination_station}")
+                log.error(e)
+                exit(1)
+            renfe.save(renfeScrapeConfig, result)
+
             # Check Round Trips oportunities
             for round_trip_destination_departure_time in round_trip_destination_departure_times.split(","):
                 round_trip(runConfig, start_date, travel_from, round_trip_origin_departure_time, travel_to,
