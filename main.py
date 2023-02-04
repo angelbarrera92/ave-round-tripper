@@ -8,6 +8,7 @@ from src.db.db import MySQL, PostgreSQL, Sqlite
 from src.logs.log import log_setup
 from src.notifications.telegram import Telegram
 from src.oportunities.roundtrip import round_trip
+from src.scrapers.iryo import IryoScraper, IryoScraperConfig
 from src.scrapers.renfe import RenfeScraper, RenfeScraperConfig
 
 
@@ -43,6 +44,7 @@ def run(runConfig: RunConfig):
         start_date = datetime.now()
 
     renfe = RenfeScraper()
+    iryo = IryoScraper()
 
     processed = 0
     while processed < travel_days:
@@ -56,6 +58,8 @@ def run(runConfig: RunConfig):
         # Trains From Origin -> To Destination
         origin_station = travel_from
         destination_station = travel_to
+
+        # Renfe
         renfeScrapeConfig = RenfeScraperConfig(
             runConfig, currentDateFormatted, origin_station, destination_station, renfe_price_change_notification)
         try:
@@ -66,10 +70,23 @@ def run(runConfig: RunConfig):
             exit(1)
         renfe.save(renfeScrapeConfig, result)
 
+        # IRYO
+        iryoScraperConfig = IryoScraperConfig(
+            runConfig, currentDateFormatted, origin_station, destination_station, renfe_price_change_notification)
+        try:
+            result = iryo.scrape(iryoScraperConfig)
+        except Exception as e:
+            log.error(f"Error scraping {currentDateFormatted} from {origin_station} to {destination_station}")
+            log.error(e)
+            exit(1)
+        iryo.save(iryoScraperConfig, result)
+
         if round_trip_enabled:
             # Return: Trains From Destination -> To Origin
             origin_station = travel_to
             destination_station = travel_from
+
+            # Renfe
             renfeScrapeConfig = RenfeScraperConfig(
                 runConfig, currentDateFormatted, origin_station, destination_station, renfe_price_change_notification)
             try:
@@ -79,6 +96,17 @@ def run(runConfig: RunConfig):
                 log.error(e)
                 exit(1)
             renfe.save(renfeScrapeConfig, result)
+
+            # IRYO
+            iryoScraperConfig = IryoScraperConfig(
+                runConfig, currentDateFormatted, origin_station, destination_station, renfe_price_change_notification)
+            try:
+                result = iryo.scrape(iryoScraperConfig)
+            except Exception as e:
+                log.error(f"Error scraping {currentDateFormatted} from {origin_station} to {destination_station}")
+                log.error(e)
+                exit(1)
+            iryo.save(iryoScraperConfig, result)
 
             # Check Round Trips oportunities
             for round_trip_destination_departure_time in round_trip_destination_departure_times.split(","):
