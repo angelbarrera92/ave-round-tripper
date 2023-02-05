@@ -45,6 +45,7 @@ class IryoScraper(Scraper):
         chrome_options.add_argument("disable-infobars")
         chrome_options.add_argument("--disable-extensions")
         chrome_options.add_argument("--window-size=400,1000")
+        chrome_options.add_argument("--user-agent=Mozilla/5.0 (X11; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/109.0")
         self.__driver = webdriver.Chrome(options=chrome_options)
         self.__start_url = "https://iryo.eu/es/home"
 
