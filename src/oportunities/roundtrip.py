@@ -107,6 +107,8 @@ def _round_trip_trains(cfg: RunConfig, origin: str, fromOriginAt: str, destinati
             cfg.db.session.commit()
 
             if alert:
+                originTrainKind = originTrain.kind
+                destinationTrainKind = destinationTrain.kind
                 targetDateStr = datetime.strftime(
                     originTrain.departure_date, "%A %d/%m/%Y")
 
@@ -114,15 +116,15 @@ def _round_trip_trains(cfg: RunConfig, origin: str, fromOriginAt: str, destinati
                 # Only if price drop
                 if priceChanged and newPrice < oldPrice:
                     cfg.notification.send(
-                        f"↓↓↓↓ {targetDateStr} {origin}-{destination} {fromOriginAt}-{fromDestinationAt}. From {oldPrice}€ to {newPrice}€")
+                        f"↓↓↓↓ {targetDateStr} {originTrainKind} {origin} - {destinationTrainKind} {destination} {fromOriginAt}-{fromDestinationAt}. From {oldPrice}€ to {newPrice}€")
                 # Only if its a new opportunity with a low price
                 elif newRoundTrip and (newPrice <= notificationTargetPrice):
                     cfg.notification.send(
-                        f"►►►► {targetDateStr} {origin}-{destination} {fromOriginAt}-{fromDestinationAt}. {newPrice}€")
+                        f"►►►► {targetDateStr} {originTrainKind} {origin} - {destinationTrainKind} {destination} {fromOriginAt}-{fromDestinationAt}. {newPrice}€")
                 # Notify also if its a new min price
                 if newMinPrice:
                     cfg.notification.send(
-                        f"🔥🔥🔥🔥 {targetDateStr} {origin}-{destination} {fromOriginAt}-{fromDestinationAt}. Cheapest price was {minPrice}€ now is {roundTrip.total_price}€. New min price!")
+                        f"🔥🔥🔥🔥 {targetDateStr} {originTrainKind} {origin} - {destinationTrainKind} {destination} {fromOriginAt}-{fromDestinationAt}. Cheapest price was {minPrice}€ now is {roundTrip.total_price}€. New min price!")
                 # Old notifications
                 # if priceChanged and newPrice > oldPrice:
                 #     cfg.notification.send(
