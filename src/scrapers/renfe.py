@@ -267,16 +267,16 @@ class RenfeScraper(Scraper):
                 targetDateStr = datetime.strftime(date, "%A %d/%m/%Y")
                 if not newPrice:
                     cfg.runConfig.notification.send(
-                        f"⚠️⚠️⚠️⚠️ {targetDateStr} {cfg.origin_station}-{cfg.destination_station} {salida}-{llegada}. No available.")
+                        f"⚠️⚠️⚠️⚠️ {targetDateStr} {kind} {cfg.origin_station}-{cfg.destination_station} {salida}-{llegada}. No available.")
                 elif not oldPrice:
                     cfg.runConfig.notification.send(
-                        f"►►►► {targetDateStr} {cfg.origin_station}-{cfg.destination_station} {salida}-{llegada}. {newPrice}€")
+                        f"►►►► {targetDateStr} {kind} {cfg.origin_station}-{cfg.destination_station} {salida}-{llegada}. {newPrice}€")
                 elif priceChanged and newPrice < oldPrice:
                     cfg.runConfig.notification.send(
-                        f"↓↓↓↓ {targetDateStr} {cfg.origin_station}-{cfg.destination_station} {salida}-{llegada}. From {oldPrice}€ to {newPrice}€")
+                        f"↓↓↓↓ {targetDateStr} {kind} {cfg.origin_station}-{cfg.destination_station} {salida}-{llegada}. From {oldPrice}€ to {newPrice}€")
                 elif priceChanged and newPrice > oldPrice:
                     cfg.runConfig.notification.send(
-                        f"↑↑↑↑ {targetDateStr} {cfg.origin_station}-{cfg.destination_station} {salida}-{llegada}. From {oldPrice}€ to {newPrice}€")
+                        f"↑↑↑↑ {targetDateStr} {kind} {cfg.origin_station}-{cfg.destination_station} {salida}-{llegada}. From {oldPrice}€ to {newPrice}€")
 
             cfg.runConfig.db.session.add(t)
         cfg.runConfig.db.session.commit()
