@@ -1,13 +1,11 @@
 import re
 import traceback
 from datetime import datetime
-from time import sleep
 
 from bs4 import BeautifulSoup
 from selenium import webdriver
 from selenium.common.exceptions import (NoSuchElementException,
-                                        StaleElementReferenceException,
-                                        WebDriverException)
+                                        WebDriverException, TimeoutException)
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
@@ -45,7 +43,8 @@ class IryoScraper(Scraper):
         chrome_options.add_argument("disable-infobars")
         chrome_options.add_argument("--disable-extensions")
         chrome_options.add_argument("--window-size=400,1000")
-        chrome_options.add_argument("--user-agent=Mozilla/5.0 (X11; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/109.0")
+        chrome_options.add_argument(
+            "--user-agent=Mozilla/5.0 (X11; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/109.0")
         self.__driver = webdriver.Chrome(options=chrome_options)
         self.__start_url = "https://iryo.eu/es/home"
 
@@ -197,6 +196,11 @@ class IryoScraper(Scraper):
                 cfg.runConfig.log.info(f"trayecto: {trayecto}")
                 result.tickets.append(trayecto)
 
+        except TimeoutException as ex:
+            cfg.runConfig.log.error(
+                f"Timeout while parsing Iryo results: {ex}.")
+            traceback.print_exc()
+            raise ex
         except WebDriverException as ex:
             # Print the stack trace
             cfg.runConfig.log.error(f"error while parsing Iryo results: {ex}.")
