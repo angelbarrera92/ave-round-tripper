@@ -40,8 +40,10 @@ class IryoScraper(Scraper):
     def __init__(self) -> None:
         chrome_options = Options()
         chrome_options.add_argument("--headless")
-        chrome_options.add_argument("disable-infobars")
+        chrome_options.add_argument("--disable-infobars")
         chrome_options.add_argument("--disable-extensions")
+        chrome_options.add_argument("--disable-dev-shm-usage")
+        chrome_options.add_argument("--no-sandbox")
         chrome_options.add_argument("--window-size=400,1000")
         chrome_options.add_argument(
             "--user-agent=Mozilla/5.0 (X11; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/109.0")

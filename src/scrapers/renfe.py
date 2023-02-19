@@ -38,8 +38,10 @@ class RenfeScraper(Scraper):
     def __init__(self) -> None:
         chrome_options = Options()
         chrome_options.add_argument("--headless")
-        chrome_options.add_argument("disable-infobars")
+        chrome_options.add_argument("--disable-infobars")
         chrome_options.add_argument("--disable-extensions")
+        chrome_options.add_argument("--disable-dev-shm-usage")
+        chrome_options.add_argument("--no-sandbox")
         chrome_options.add_argument("--window-size=850,1080")
         self.__driver = webdriver.Chrome(options=chrome_options)
         self.__start_url = "https://www.renfe.com/es/es"
