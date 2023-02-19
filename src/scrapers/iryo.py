@@ -202,7 +202,6 @@ class IryoScraper(Scraper):
             cfg.runConfig.log.error(
                 f"Timeout while parsing Iryo results: {ex}.")
             traceback.print_exc()
-            raise ex
         except WebDriverException as ex:
             # Print the stack trace
             cfg.runConfig.log.error(f"error while parsing Iryo results: {ex}.")
