@@ -87,8 +87,6 @@ class OuigoScraper(Scraper):
             for journey in journeys["outbound"]:
                 trayecto = {}
                 price = journey["price"]
-                # Price should be a string in the format x,xx (e.g. 10,50€)
-                price = f"{price:.2f}€"
                 departureTime = journey["departure_station"]["departure_timestamp"]
                 # This is an example of departureTime 2023-06-15T07:05:00+02:00. We need 07:05. Parse it using datetime
                 departureTime = datetime.strptime(departureTime, "%Y-%m-%dT%H:%M:%S%z").strftime("%H:%M")
@@ -176,14 +174,6 @@ class OuigoScraper(Scraper):
 
 
 def lower_price(prices):
-    prices_as_floats = list()
     if len(prices) > 0:
-        for price in prices:
-            price_as_float = "".join(
-                i for i in price if i.isdigit() or i == ",")
-            if price_as_float:
-                price_as_float = float(price_as_float.replace(",", "."))
-                prices_as_floats.append(price_as_float)
-    if len(prices_as_floats) > 0:
-        return sorted(prices_as_floats)[0]
+        return sorted(prices)[0]
     return None
