@@ -1,18 +1,7 @@
-import re
 import traceback
 from datetime import datetime
-from time import sleep
 
-from bs4 import BeautifulSoup
-from selenium import webdriver
-from selenium.common.exceptions import (NoSuchElementException,
-                                        StaleElementReferenceException,
-                                        WebDriverException)
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.common.by import By
-from selenium.webdriver.common.keys import Keys
-from selenium.webdriver.support import expected_conditions
-from selenium.webdriver.support.ui import WebDriverWait
+import requests
 
 from src.config import RunConfig
 from src.db.metadata import update_metadata
@@ -40,22 +29,15 @@ class OuigoScrapeResult(ScrapeResult):
 class OuigoScraper(Scraper):
 
     def __init__(self) -> None:
-        chrome_options = Options()
-        chrome_options.add_argument("--headless")
-        chrome_options.add_argument("--disable-infobars")
-        chrome_options.add_argument("--disable-extensions")
-        chrome_options.add_argument("--disable-dev-shm-usage")
-        chrome_options.add_argument("--no-sandbox")
-        chrome_options.add_argument("--window-size=400,1000")
-        chrome_options.add_argument("--user-agent=Mozilla/5.0 (X11; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/109.0")
-        self.__driver = webdriver.Chrome(options=chrome_options)
-        self.__start_url = "https://www.ouigo.com/es/"
+        super().__init__()
+        self.__username = "ouigo.web"
+        self.__password = "SquirelWeb!2020"
+        self.__login_url = "https://mdw02.api-es.ouigo.com/api/Token/login"
+        self.__stations_url = "https://mdw02.api-es.ouigo.com/api/Data/GetStations"
+        self.__journey_url = "https://mdw02.api-es.ouigo.com/api/Sale/journeysearch"
 
     def __del__(self):
-        try:
-            self.__driver.quit()
-        except:
-            pass
+        pass
 
     def scrape(self, cfg: OuigoScraperConfig) -> OuigoScrapeResult:
         cfg.runConfig.log.info("running OuigoScraper")
@@ -64,95 +46,59 @@ class OuigoScraper(Scraper):
             f"day: {cfg.day} | origin_station: {cfg.origin_station} | destination_station: {cfg.destination_station}")
         result = OuigoScrapeResult()
         try:
-            self.__driver.get(self.__start_url)
+            token = requests.post(self.__login_url, json={
+                "username": self.__username,
+                "password": self.__password
+            }).json()["token"]
+            cfg.runConfig.log.debug(f"token: {token}")
 
-            # Waiting for the spage to be loaded
-            cfg.runConfig.log.debug(
-                "waiting for the page to be loaded")
-            WebDriverWait(self.__driver, 30).until(
-                expected_conditions.presence_of_element_located((By.ID, "search_submit")))
+            stations = requests.get(self.__stations_url).json()
+            origin_station_code = ""
+            destination_station_code = ""
+            for station in stations:
+                if not station["hidden"]:
+                    if cfg.origin_station in station["synonyms"]:
+                        cfg.runConfig.log.debug(f"origin station found: {station['name']}")
+                        origin_station_code = station["_u_i_c_station_code"]
+                    if cfg.destination_station in station["synonyms"]:
+                        cfg.runConfig.log.debug(f"destination station found: {station['name']}")
+                        destination_station_code = station["_u_i_c_station_code"]
+            cfg.runConfig.log.debug(f"origin station code: {origin_station_code}")
+            cfg.runConfig.log.debug(f"destination station code: {destination_station_code}")
+            if origin_station_code == "" or destination_station_code == "":
+                cfg.runConfig.log.error("origin or destination station not found")
+                return result
+            # cfg.day looks like 15/06/2023 and we need 2023-06-15
+            outbound_date = datetime.strptime(cfg.day, "%d/%m/%Y").strftime("%Y-%m-%d")
+            journeys = requests.post(self.__journey_url, json={
+                "destination": destination_station_code,
+                "origin": origin_station_code,
+                "outbound_date": outbound_date,
+                "passengers": [{
+                    "discount_cards": [],
+                    "disability_type": "NH",
+                    "type": "A"
+                }]
+            }, headers={
+                "Authorization": f"Bearer {token}"
+            }).json()
+            cfg.runConfig.log.debug(f"journeys: {journeys}")
 
-            try:
-                cfg.runConfig.log.debug("accepting all cookies")
-                cookies = self.__driver.find_element(By.ID, "didomi-notice-agree-button")
-
-                cookies.click()
-            except NoSuchElementException as ex:
-                cfg.runConfig.log.warn(
-                    "seems like cookies has been already accepted")
-
-            cfg.runConfig.log.info("filling up input fields")
-            cfg.runConfig.log.debug("selecting the origin station")
-            origin = self.__driver.find_element(By.ID, "select2-edit-departure-station-container")
-            origin.click()
-            originInput = self.__driver.find_element(By.CLASS_NAME, "select2-search__field")
-            originInput.send_keys(cfg.origin_station)
-            originInput.send_keys(Keys.ENTER)
-
-            destination = self.__driver.find_element(By.ID, "select2-edit-arrival-station-container")
-            destination.click()
-            destinationInput = self.__driver.find_element(By.CLASS_NAME, "select2-search__field")
-            destinationInput.send_keys(cfg.destination_station)
-            destinationInput.send_keys(Keys.ENTER)
-
-
-            # Set the date
-            cfg.runConfig.log.debug(f"setting the date to {cfg.day}")
-            # Execute document.getElementById("edit-start-date").value = "02/03/2023"
-            self.__driver.execute_script(f"document.getElementById('edit-start-date').value = '{cfg.day}';")
-
-            # Scroll a few pixels to make the button visible
-            self.__driver.execute_script("window.scrollBy(0, 150);")
-
-
-            # Search for the trains
-            cfg.runConfig.log.debug("searching for the trains")
-            search = self.__driver.find_element(
-                By.ID, "search_submit")
-            search.click()
-
-            # Trains table. Parsing
-            cfg.runConfig.log.info("waiting for results")
-            WebDriverWait(self.__driver, 30).until(
-                expected_conditions.presence_of_element_located((By.XPATH, "/html/body/div[2]/div/main/div/section/div[4]/div/section/div/div/ul[2]")))
-
-            soup = BeautifulSoup(self.__driver.page_source, "html.parser")
-            # Get the ul element with the attribute role=tabpanel
-            searchResults = soup.find_all(role="tabpanel")
-            if len(searchResults) != 1:
-                cfg.runConfig.log.error("No results found")
-                raise ValueError("No results found")
-
-            searchResults = searchResults[0]
-            # Every train info is in a button element
-            trainButtons = searchResults.find_all("button")
-            for trainButton in trainButtons:
-                # An example textContent for a trainButton is: '10:05Madrid - Puerta de Atocha - Almudena Grandes11:22Zaragoza - Delicias15€1h17Mejor precio'
-                # Parse the textContent. The time is always specified as hh:mm. There are two times, the departure and the arrival
-                # Scrape it using regex
+            for journey in journeys["outbound"]:
                 trayecto = {}
-                timePattern = re.compile(r"(\d{2}:\d{2})")
-                times = timePattern.findall(trainButton.text)
-                if len(times) != 2:
-                    cfg.runConfig.log.error("Error parsing the times")
-                    raise ValueError("Error parsing the times")
-                departureTime = times[0]
-                arrivalTime = times[1]
-                cfg.runConfig.log.info(f"Train found: {departureTime} - {arrivalTime}")
-                # The price is always specified as a number followed by €
-                pricePattern = re.compile(r"(\d+)€")
-                price = pricePattern.findall(trainButton.text)
-                if len(price) != 1:
-                    cfg.runConfig.log.error("Error parsing the price")
-                    raise ValueError("Error parsing the price")
-                price = f"{price[0]}€"
-                cfg.runConfig.log.info(f"Price: {price}")
-                # We can calculate the duration by subtracting the arrival time from the departure time
+                price = journey["price"]
+                # Price should be a string in the format x,xx (e.g. 10,50€)
+                price = f"{price:.2f}€"
+                departureTime = journey["departure_station"]["departure_timestamp"]
+                # This is an example of departureTime 2023-06-15T07:05:00+02:00. We need 07:05. Parse it using datetime
+                departureTime = datetime.strptime(departureTime, "%Y-%m-%dT%H:%M:%S%z").strftime("%H:%M")
+                arrivalTime = journey["arrival_station"]["arrival_timestamp"]
+                # This is an example of arrivalTime 2023-06-15T09:22:00+02:00. We need 09:22. Parse it using datetime
+                arrivalTime = datetime.strptime(arrivalTime, "%Y-%m-%dT%H:%M:%S%z").strftime("%H:%M")
+                # Calculate duration from departureTime and arrivalTime
                 duration = datetime.strptime(arrivalTime, "%H:%M") - datetime.strptime(departureTime, "%H:%M")
                 # Represent the duration as a string in the format xh:xm (e.g. 1h:30m)
                 duration = f"{duration.seconds // 3600}h:{(duration.seconds // 60) % 60}m"
-                cfg.runConfig.log.info(f"Duration: {duration}")
-
                 trayecto["salida"] = departureTime
                 trayecto["duracion"] = duration
                 trayecto["llegada"] = arrivalTime
@@ -160,17 +106,10 @@ class OuigoScraper(Scraper):
                 trayecto["prices"] = [price]
                 cfg.runConfig.log.info(f"trayecto: {trayecto}")
                 result.tickets.append(trayecto)
-        except WebDriverException as ex:
-            # Print the stack trace
-            cfg.runConfig.log.error(f"error while parsing Ouigo results: {ex}.")
-            traceback.print_exc()
-            if ex.msg == "invalid session id":
-                cfg.runConfig.log.error(
-                    "invalid session id. Probably the session has expired. Exiting")
-                raise ex
         except Exception as ex:
-            cfg.runConfig.log.error(
-                f"error while parsing Ouigo results: {ex}. Continuing...")
+            cfg.runConfig.log.error("error while scraping")
+            cfg.runConfig.log.error(ex)
+            cfg.runConfig.log.error(traceback.format_exc())
         return result
 
     def save(self, cfg: OuigoScraperConfig, result: OuigoScrapeResult) -> None:
