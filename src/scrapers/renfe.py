@@ -42,7 +42,7 @@ class RenfeScraper(Scraper):
         chrome_options.add_argument("--disable-extensions")
         chrome_options.add_argument("--disable-dev-shm-usage")
         chrome_options.add_argument("--no-sandbox")
-        chrome_options.add_argument("--window-size=850,1080")
+        chrome_options.add_argument("--window-size=1080,1080")
         self.__driver = webdriver.Chrome(options=chrome_options)
         self.__start_url = "https://www.renfe.com/es/es"
 
@@ -74,11 +74,10 @@ class RenfeScraper(Scraper):
             except NoSuchElementException as ex:
                 cfg.runConfig.log.warn(
                     "seems like cookies has been already accepted")
-
             cfg.runConfig.log.info("filling up input fields")
             cfg.runConfig.log.debug("selecting the origin station")
             # Select the origin station
-            origin = self.__driver.find_element(By.XPATH, "/html/body/div[1]/div/div/div[1]/div/div/div/div/div/div/rf-header/rf-header-top/div[2]/rf-search/div/div[1]/rf-awesomplete[1]/div/div[1]/input")
+            origin = self.__driver.find_element(By.XPATH, "/html/body/div[1]/div/div/div[1]/div/div/div/div/div/div/rf-header/rf-header-top/div/div[2]/rf-search/div/div[1]/rf-awesomplete[1]/div/div[1]/input")
             origin.clear()
             origin.send_keys(cfg.origin_station)
             origin.send_keys(Keys.DOWN)
@@ -100,7 +99,7 @@ class RenfeScraper(Scraper):
 
             # Set the destination station
             cfg.runConfig.log.debug("selecting the destination station")
-            destination = self.__driver.find_element(By.XPATH, "/html/body/div[1]/div/div/div[1]/div/div/div/div/div/div/rf-header/rf-header-top/div[2]/rf-search/div/div[1]/rf-awesomplete[2]/div/div[1]/input")
+            destination = self.__driver.find_element(By.XPATH, "/html/body/div[1]/div/div/div[1]/div/div/div/div/div/div/rf-header/rf-header-top/div/div[2]/rf-search/div/div[1]/rf-awesomplete[2]/div/div[1]/input")
             destination.clear()
             destination.send_keys(cfg.destination_station)
             destination.send_keys(Keys.DOWN)
