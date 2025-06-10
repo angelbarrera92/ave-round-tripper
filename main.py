@@ -71,27 +71,27 @@ def run(runConfig: RunConfig):
             exit(1)
         renfe.save(renfeScrapeConfig, result)
 
-        # IRYO
-        iryoScraperConfig = IryoScraperConfig(
-            runConfig, currentDateFormatted, origin_station, destination_station, renfe_price_change_notification)
-        try:
-            result = iryo.scrape(iryoScraperConfig)
-        except Exception as e:
-            log.error(f"Error scraping {currentDateFormatted} from {origin_station} to {destination_station}")
-            log.error(e)
-            exit(1)
-        iryo.save(iryoScraperConfig, result)
+        # # IRYO
+        # iryoScraperConfig = IryoScraperConfig(
+        #     runConfig, currentDateFormatted, origin_station, destination_station, renfe_price_change_notification)
+        # try:
+        #     result = iryo.scrape(iryoScraperConfig)
+        # except Exception as e:
+        #     log.error(f"Error scraping {currentDateFormatted} from {origin_station} to {destination_station}")
+        #     log.error(e)
+        #     exit(1)
+        # iryo.save(iryoScraperConfig, result)
 
-        # Ouigo
-        ouigoScraperConfig = OuigoScraperConfig(
-            runConfig, currentDateFormatted, origin_station, destination_station, renfe_price_change_notification)
-        try:
-            result = ouigo.scrape(ouigoScraperConfig)
-        except Exception as e:
-            log.error(f"Error scraping {currentDateFormatted} from {origin_station} to {destination_station}")
-            log.error(e)
-            exit(1)
-        ouigo.save(ouigoScraperConfig, result)
+        # # Ouigo
+        # ouigoScraperConfig = OuigoScraperConfig(
+        #     runConfig, currentDateFormatted, origin_station, destination_station, renfe_price_change_notification)
+        # try:
+        #     result = ouigo.scrape(ouigoScraperConfig)
+        # except Exception as e:
+        #     log.error(f"Error scraping {currentDateFormatted} from {origin_station} to {destination_station}")
+        #     log.error(e)
+        #     exit(1)
+        # ouigo.save(ouigoScraperConfig, result)
 
 
         if round_trip_enabled:
@@ -110,27 +110,27 @@ def run(runConfig: RunConfig):
                 exit(1)
             renfe.save(renfeScrapeConfig, result)
 
-            # IRYO
-            iryoScraperConfig = IryoScraperConfig(
-                runConfig, currentDateFormatted, origin_station, destination_station, renfe_price_change_notification)
-            try:
-                result = iryo.scrape(iryoScraperConfig)
-            except Exception as e:
-                log.error(f"Error scraping {currentDateFormatted} from {origin_station} to {destination_station}")
-                log.error(e)
-                exit(1)
-            iryo.save(iryoScraperConfig, result)
+            # # IRYO
+            # iryoScraperConfig = IryoScraperConfig(
+            #     runConfig, currentDateFormatted, origin_station, destination_station, renfe_price_change_notification)
+            # try:
+            #     result = iryo.scrape(iryoScraperConfig)
+            # except Exception as e:
+            #     log.error(f"Error scraping {currentDateFormatted} from {origin_station} to {destination_station}")
+            #     log.error(e)
+            #     exit(1)
+            # iryo.save(iryoScraperConfig, result)
 
-            # Ouigo
-            ouigoScraperConfig = OuigoScraperConfig(
-                runConfig, currentDateFormatted, origin_station, destination_station, renfe_price_change_notification)
-            try:
-                result = ouigo.scrape(ouigoScraperConfig)
-            except Exception as e:
-                log.error(f"Error scraping {currentDateFormatted} from {origin_station} to {destination_station}")
-                log.error(e)
-                exit(1)
-            ouigo.save(ouigoScraperConfig, result)
+            # # Ouigo
+            # ouigoScraperConfig = OuigoScraperConfig(
+            #     runConfig, currentDateFormatted, origin_station, destination_station, renfe_price_change_notification)
+            # try:
+            #     result = ouigo.scrape(ouigoScraperConfig)
+            # except Exception as e:
+            #     log.error(f"Error scraping {currentDateFormatted} from {origin_station} to {destination_station}")
+            #     log.error(e)
+            #     exit(1)
+            # ouigo.save(ouigoScraperConfig, result)
 
             # Check Round Trips oportunities
             for round_trip_origin_departure_time in round_trip_origin_departure_times.split(","):
