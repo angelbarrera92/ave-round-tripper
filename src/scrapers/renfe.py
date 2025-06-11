@@ -1,4 +1,5 @@
 from datetime import datetime
+import re
 
 from bs4 import BeautifulSoup
 from selenium import webdriver
@@ -60,7 +61,7 @@ class RenfeScraper(Scraper):
             pass
 
     def scrape(self, cfg: RenfeScraperConfig) -> RenfeScrapeResult:
-        cfg.runConfig.log.info("running RenfeScraper")
+        cfg.runConfig.log.info("running RenfeScraper with ENHANCED DUAL CALENDAR SUPPORT")
         cfg.runConfig.log.debug("configuration:")
         cfg.runConfig.log.debug(
             f"day: {cfg.day} | origin_station: {cfg.origin_station} | destination_station: {cfg.destination_station}")
@@ -134,28 +135,344 @@ class RenfeScraper(Scraper):
             
             sleep(1)
 
-            # Set one way travel (if not already selected)
-            cfg.runConfig.log.debug("ensuring one way travel is selected")
-            try:
-                trip_go = self.__driver.find_element(By.ID, "trip-go")
-                if not trip_go.is_selected():
-                    trip_go.click()
-                    sleep(1)
-                    cfg.runConfig.log.debug("selected one-way travel")
-            except Exception as e:
-                cfg.runConfig.log.debug(f"could not set one-way travel: {e}")
+            # SKIP Solo IDA selection - testing shows it's not required for departure trains
+            cfg.runConfig.log.debug("skipping Solo IDA selection - not required for departure trains")
 
-            # Select the date
-            cfg.runConfig.log.debug("selecting the travel date")
+            # ENHANCED DUAL CALENDAR DATE SELECTION
+            cfg.runConfig.log.info("🗓️ STARTING ENHANCED DUAL CALENDAR DATE SELECTION")
+            
+            # Re-find the date input to ensure we have fresh reference
             date_input = WebDriverWait(self.__driver, 10).until(
                 expected_conditions.element_to_be_clickable((By.ID, "first-input")))
             
-            # Clear and enter date
-            self.__driver.execute_script("arguments[0].value = '';", date_input)
-            date_input.send_keys(cfg.day)
-            sleep(2)
+            # Check current value before any changes
+            initial_value = date_input.get_attribute('value')
+            cfg.runConfig.log.debug(f"initial date input value: '{initial_value}'")
+            
+            # Parse the target date
+            try:
+                target_date_obj = datetime.strptime(cfg.day, "%d/%m/%Y")
+                target_day = target_date_obj.day
+                target_month = target_date_obj.month
+                target_year = target_date_obj.year
+                cfg.runConfig.log.info(f"🎯 target date: day={target_day}, month={target_month}, year={target_year}")
+            except ValueError as e:
+                cfg.runConfig.log.error(f"could not parse date format {cfg.day}: {e}")
+                raise
+            
+            # Click to open the calendar
+            cfg.runConfig.log.debug("clicking date input to open calendar")
+            date_input.click()
+            sleep(3)  # Increased wait time for calendar to fully load
+            
+            # Wait for calendar to appear
+            try:
+                calendar = WebDriverWait(self.__driver, 15).until(
+                    expected_conditions.visibility_of_element_located((By.CSS_SELECTOR, ".lightpick")))
+                cfg.runConfig.log.debug("✅ calendar opened successfully")
+                sleep(2)  # Additional wait for calendar to stabilize
+            except Exception as e:
+                cfg.runConfig.log.error(f"❌ calendar did not open: {e}")
+                raise
+            
+            # DUAL CALENDAR NAVIGATION LOGIC
+            current_month = datetime.now().month
+            current_year = datetime.now().year
+            
+            # Spanish month names for matching
+            spanish_months = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 
+                            'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre']
+            target_month_spanish = spanish_months[target_month - 1]
+            
+            cfg.runConfig.log.info(f"🔍 looking for month: {target_month_spanish} {target_year}")
+            
+            def get_displayed_months():
+                """Returns info about the two displayed months in the dual calendar"""
+                month_info = []
+                try:
+                    # Try multiple selectors to find month titles
+                    month_selectors = [
+                        ".lightpick__month-title-text", 
+                        ".lightpick__month-title", 
+                        ".lightpick .lightpick__month .lightpick__month-title"
+                    ]
+                    
+                    for selector in month_selectors:
+                        month_elements = self.__driver.find_elements(By.CSS_SELECTOR, selector)
+                        cfg.runConfig.log.debug(f"found {len(month_elements)} elements with selector: {selector}")
+                        
+                        if len(month_elements) >= 1:
+                            for elem in month_elements:
+                                text = elem.text.strip()
+                                if text:
+                                    month_info.append({
+                                        'text': text,
+                                        'element': elem
+                                    })
+                                    cfg.runConfig.log.debug(f"found month: {text}")
+                            break
+                    
+                    # Alternative: look for calendar containers
+                    if len(month_info) < 2:
+                        cfg.runConfig.log.debug("trying alternative calendar container search")
+                        containers = self.__driver.find_elements(By.CSS_SELECTOR, ".lightpick__months .lightpick__month")
+                        for container in containers:
+                            try:
+                                title_elem = container.find_element(By.CSS_SELECTOR, ".lightpick__month-title-text, .lightpick__month-title")
+                                if title_elem and title_elem.text.strip():
+                                    month_info.append({
+                                        'text': title_elem.text.strip(),
+                                        'element': title_elem,
+                                        'container': container
+                                    })
+                            except:
+                                continue
+                    
+                except Exception as e:
+                    cfg.runConfig.log.debug(f"error getting displayed months: {e}")
+                
+                return month_info
+            
+            # Navigate to target month if needed
+            max_navigation_attempts = 15  # Prevent infinite loops
+            navigation_attempts = 0
+            
+            while navigation_attempts < max_navigation_attempts:
+                displayed_months = get_displayed_months()
+                month_texts = [m['text'] for m in displayed_months]
+                cfg.runConfig.log.debug(f"📅 displayed months: {month_texts}")
+                
+                # Check if target month is visible in either of the two calendars
+                target_month_visible = False
+                
+                for i, month_info in enumerate(displayed_months):
+                    month_text = month_info['text'].lower()
+                    if target_month_spanish.lower() in month_text and str(target_year) in month_text:
+                        target_month_visible = True
+                        cfg.runConfig.log.info(f"✅ target month {target_month_spanish} {target_year} found in calendar {i}: {month_text}")
+                        break
+                
+                if target_month_visible:
+                    break
+                
+                # Determine navigation direction
+                # Dual calendar shows 2 consecutive months side by side
+                # Navigation buttons move by 2 months at a time
+                if len(displayed_months) >= 1:
+                    first_month_text = displayed_months[0]['text'].lower()
+                    
+                    # Extract month number from first displayed month
+                    first_month_num = None
+                    for i, spanish_month in enumerate(spanish_months):
+                        if spanish_month.lower() in first_month_text:
+                            first_month_num = i + 1
+                            break
+                    
+                    if first_month_num is not None:
+                        # If we have 2 months displayed, second month is first_month_num + 1
+                        second_month_num = first_month_num + 1 if first_month_num < 12 else 1
+                        
+                        cfg.runConfig.log.debug(f"current view shows months {first_month_num} and {second_month_num}, target is {target_month}")
+                        
+                        # Check if target month is in the range of currently displayed months
+                        if target_month == first_month_num or target_month == second_month_num:
+                            cfg.runConfig.log.debug("target month should be visible, but wasn't found - continuing anyway")
+                            break
+                        elif target_month > second_month_num:
+                            # Navigate forward
+                            cfg.runConfig.log.debug(f"➡️ navigating forward: target {target_month} > displayed {second_month_num}")
+                            try:
+                                next_button = self.__driver.find_element(By.CSS_SELECTOR, ".lightpick__next-action")
+                                next_button.click()
+                                sleep(2)
+                            except Exception as e:
+                                cfg.runConfig.log.debug(f"error clicking next button: {e}")
+                                break
+                        elif target_month < first_month_num:
+                            # Navigate backward
+                            cfg.runConfig.log.debug(f"⬅️ navigating backward: target {target_month} < displayed {first_month_num}")
+                            try:
+                                prev_button = self.__driver.find_element(By.CSS_SELECTOR, ".lightpick__previous-action")
+                                prev_button.click()
+                                sleep(2)
+                            except Exception as e:
+                                cfg.runConfig.log.debug(f"error clicking previous button: {e}")
+                                break
+                        else:
+                            cfg.runConfig.log.debug("target month should be visible but search failed")
+                            break
+                    else:
+                        cfg.runConfig.log.debug("could not determine current month from display")
+                        break
+                else:
+                    cfg.runConfig.log.debug("no displayed months found")
+                    break
+                
+                navigation_attempts += 1
+            
+            if navigation_attempts >= max_navigation_attempts:
+                cfg.runConfig.log.warning("⚠️ reached maximum navigation attempts, proceeding with current view")
+            
+            # ENHANCED DAY SELECTION FOR DUAL CALENDAR
+            cfg.runConfig.log.info(f"🎯 looking for day {target_day} in dual calendar")
+            
+            # Get all day elements from both calendars
+            day_elements = self.__driver.find_elements(By.CSS_SELECTOR, ".lightpick__day")
+            cfg.runConfig.log.debug(f"found {len(day_elements)} day elements in dual calendar")
+            
+            day_clicked = False
+            
+            # Strategy 1: Look for target day in the correct month calendar
+            try:
+                # Find the calendar containers
+                calendar_containers = self.__driver.find_elements(By.CSS_SELECTOR, ".lightpick__months .lightpick__month")
+                cfg.runConfig.log.debug(f"found {len(calendar_containers)} calendar containers")
+                
+                for container_index, container in enumerate(calendar_containers):
+                    try:
+                        # Get the month title for this container
+                        title_selectors = [".lightpick__month-title-text", ".lightpick__month-title"]
+                        title_elem = None
+                        
+                        for selector in title_selectors:
+                            try:
+                                title_elem = container.find_element(By.CSS_SELECTOR, selector)
+                                break
+                            except:
+                                continue
+                        
+                        if not title_elem:
+                            continue
+                            
+                        month_title = title_elem.text.strip().lower()
+                        cfg.runConfig.log.debug(f"calendar {container_index} shows: {month_title}")
+                        
+                        # Check if this is our target month
+                        if target_month_spanish.lower() in month_title and str(target_year) in month_title:
+                            cfg.runConfig.log.info(f"✅ found target month calendar at index {container_index}")
+                            
+                            # Get day elements from this specific calendar container
+                            container_days = container.find_elements(By.CSS_SELECTOR, ".lightpick__day")
+                            cfg.runConfig.log.debug(f"found {len(container_days)} days in target calendar")
+                            
+                            for day_elem in container_days:
+                                day_text = day_elem.text.strip()
+                                day_classes = day_elem.get_attribute('class')
+                                is_enabled = 'is-disabled' not in day_classes
+                                is_current_month = 'is-previous-month' not in day_classes and 'is-next-month' not in day_classes
+                                
+                                if day_text == str(target_day) and is_enabled and is_current_month:
+                                    cfg.runConfig.log.info(f"🎯 found target day {target_day} in correct calendar, classes: {day_classes}")
+                                    try:
+                                        # Scroll into view if needed
+                                        self.__driver.execute_script("arguments[0].scrollIntoView(true);", day_elem)
+                                        sleep(0.5)
+                                        
+                                        # Try clicking
+                                        day_elem.click()
+                                        sleep(2)
+                                        day_clicked = True
+                                        cfg.runConfig.log.info(f"✅ successfully clicked on day {target_day} in correct calendar")
+                                        break
+                                    except Exception as e:
+                                        cfg.runConfig.log.debug(f"failed to click day {target_day} in correct calendar: {e}")
+                            
+                            if day_clicked:
+                                break
+                            
+                    except Exception as e:
+                        cfg.runConfig.log.debug(f"error processing calendar container {container_index}: {e}")
+                        continue
+                        
+            except Exception as e:
+                cfg.runConfig.log.debug(f"error with calendar container approach: {e}")
+            
+            # Strategy 2: Fallback - try any enabled day with target number
+            if not day_clicked:
+                cfg.runConfig.log.debug("🔄 fallback: trying any enabled day with target number")
+                for i, day_elem in enumerate(day_elements):
+                    day_text = day_elem.text.strip()
+                    day_classes = day_elem.get_attribute('class')
+                    is_enabled = 'is-disabled' not in day_classes
+                    
+                    if day_text == str(target_day) and is_enabled:
+                        cfg.runConfig.log.debug(f"trying enabled day {target_day} at index {i}, classes: {day_classes}")
+                        try:
+                            self.__driver.execute_script("arguments[0].scrollIntoView(true);", day_elem)
+                            sleep(0.5)
+                            day_elem.click()
+                            sleep(2)
+                            day_clicked = True
+                            cfg.runConfig.log.info(f"✅ clicked day {target_day} as fallback")
+                            break
+                        except Exception as e:
+                            cfg.runConfig.log.debug(f"failed to click day {target_day} as fallback: {e}")
+            
+            # Strategy 3: JavaScript direct date setting
+            if not day_clicked:
+                cfg.runConfig.log.debug("🔧 using JavaScript fallback to set date")
+                try:
+                    self.__driver.execute_script("""
+                        arguments[0].value = arguments[1];
+                        arguments[0].dispatchEvent(new Event('input', { bubbles: true }));
+                        arguments[0].dispatchEvent(new Event('change', { bubbles: true }));
+                        arguments[0].blur();
+                    """, date_input, cfg.day)
+                    cfg.runConfig.log.info("✅ set date using JavaScript fallback")
+                    day_clicked = True
+                except Exception as e:
+                    cfg.runConfig.log.warning(f"❌ JavaScript fallback also failed: {e}")
+            
+            # Try to close calendar by clicking apply button or outside
+            cfg.runConfig.log.debug("attempting to close calendar")
+            try:
+                # Look for apply/accept buttons
+                apply_selectors = [
+                    ".lightpick__apply-action",
+                    ".lightpick__apply",
+                    "button[class*='apply']"
+                ]
+                
+                apply_button_found = False
+                for selector in apply_selectors:
+                    try:
+                        buttons = self.__driver.find_elements(By.CSS_SELECTOR, selector)
+                        for button in buttons:
+                            if button.is_displayed() and button.is_enabled():
+                                button.click()
+                                apply_button_found = True
+                                cfg.runConfig.log.debug("clicked apply button")
+                                break
+                        if apply_button_found:
+                            break
+                    except:
+                        continue
+                
+                if not apply_button_found:
+                    # Click outside to close
+                    self.__driver.find_element(By.TAG_NAME, "body").click()
+                    cfg.runConfig.log.debug("clicked outside to close calendar")
+                
+                sleep(2)
+            except:
+                pass
+            
+            # Verify the date was set correctly
+            final_value = date_input.get_attribute('value')
+            cfg.runConfig.log.info(f"📅 final date input value: '{final_value}'")
+            
+            # Report final status
+            if day_clicked:
+                cfg.runConfig.log.info(f"✅ DUAL CALENDAR DATE SELECTION COMPLETED for {target_day}")
+            else:
+                cfg.runConfig.log.warning(f"⚠️ could not select day {target_day} in calendar")
 
-            # Submit the search - try multiple possible search button selectors
+            # Scroll to the top of the page to ensure submit button is visible
+            cfg.runConfig.log.debug("scrolling to the top of the page")
+            self.__driver.execute_script("window.scrollTo(0, 0);")
+            sleep(1) # Give a moment for the scroll to complete
+
+            # Submit the search
             cfg.runConfig.log.info("submitting the search form")
             search_button_selectors = [
                 "button[type='submit']",
@@ -185,36 +502,30 @@ class RenfeScraper(Scraper):
             if not search_submitted:
                 # Fallback: try pressing Enter on the date field
                 cfg.runConfig.log.debug("trying Enter key as fallback")
-                date_input.send_keys(Keys.ENTER)
-                search_submitted = True
+                try:
+                    date_input.send_keys(Keys.ENTER)
+                    search_submitted = True
+                except:
+                    pass
 
             # Wait for results to load
             cfg.runConfig.log.info("waiting for search results")
-            sleep(10)  # Give time for navigation and loading
-            
-            # Check if we're on a results page or if results loaded
-            current_url = self.__driver.current_url
-            page_source = self.__driver.page_source.lower()
-            
-            if "resultado" in current_url or "result" in current_url or "train" in page_source or "tren" in page_source:
-                cfg.runConfig.log.info("search results page detected")
-            else:
-                cfg.runConfig.log.warning("may not be on results page, will attempt to parse anyway")
+            sleep(10)
 
             # Parse the results using BeautifulSoup
             cfg.runConfig.log.info("parsing search results")
             soup = BeautifulSoup(self.__driver.page_source, "html.parser")
             
             # Save page source for debugging
-            with open('/Users/barreang/personal/ave-round-tripper/debug_results_page.html', 'w', encoding='utf-8') as f:
-                f.write(self.__driver.page_source)
+            try:
+                with open('/Users/barreang/personal/ave-round-tripper/debug_results_page.html', 'w', encoding='utf-8') as f:
+                    f.write(self.__driver.page_source)
+            except:
+                pass
             
-            # Look for train entries - updated to match current RENFE structure
+            # Look for train entries
             train_elements = soup.find_all('div', class_='selectedTren')
-            
             cfg.runConfig.log.info(f"found {len(train_elements)} train entries")
-            
-            import re
             
             for train_element in train_elements:
                 trayecto = {}
@@ -222,7 +533,6 @@ class RenfeScraper(Scraper):
                 # Extract departure and arrival times from h5 elements
                 time_elements = train_element.find_all('h5', {'aria-hidden': 'true'})
                 if len(time_elements) >= 2:
-                    # First h5 is departure, last h5 is arrival
                     departure_text = time_elements[0].get_text().strip()
                     arrival_text = time_elements[-1].get_text().strip()
                     
@@ -238,32 +548,14 @@ class RenfeScraper(Scraper):
                 train_img = train_element.find('img', alt=re.compile(r'Tipo de tren', re.IGNORECASE))
                 if train_img:
                     alt_text = train_img.get('alt', '')
-                    # Extract train type from alt text like "Imagen de Tren. Tipo de tren AVE"
                     train_type_match = re.search(r'Tipo de tren (\w+)', alt_text, re.IGNORECASE)
                     if train_type_match:
                         trayecto["tipo"] = train_type_match.group(1).upper()
-                
-                # Extract duration from aria-label
-                duration_span = train_element.find('span', {'aria-label': re.compile(r'Duración', re.IGNORECASE)})
-                if duration_span:
-                    duration_text = duration_span.get('aria-label', '')
-                    # Extract duration from text like "Duración 2 horas 37 minutos."
-                    duration_match = re.search(r'(\d+)\s+horas?\s+(\d+)\s+minutos?', duration_text, re.IGNORECASE)
-                    if duration_match:
-                        hours = duration_match.group(1)
-                        minutes = duration_match.group(2)
-                        trayecto["duracion"] = f"{hours}h {minutes}min"
-                    else:
-                        # Try simpler pattern
-                        duration_match = re.search(r'(\d+)\s+horas?', duration_text, re.IGNORECASE)
-                        if duration_match:
-                            trayecto["duracion"] = f"{duration_match.group(1)}h"
                 
                 # Extract price from precio-final span
                 price_element = train_element.find('span', class_='precio-final')
                 if price_element:
                     price_text = price_element.get_text().strip()
-                    # Extract price from text like "Precio desde 104,20 €"
                     price_match = re.search(r'([\d,]+(?:\.\d{2})?)\s*€', price_text)
                     if price_match:
                         price_str = price_match.group(1).replace(',', '.')
@@ -273,78 +565,11 @@ class RenfeScraper(Scraper):
                 if "salida" in trayecto:
                     cfg.runConfig.log.info(f"parsed train: {trayecto}")
                     result.tickets.append(trayecto)
-                else:
-                    cfg.runConfig.log.debug(f"skipping train element - no departure time found: {train_element.get_text()[:100]}...")
-            
-            # Fallback: if no trains found with new method, try old method
-            if not result.tickets:
-                cfg.runConfig.log.warning("no trains found with new parser, trying fallback method")
-                
-                # Look for any elements containing train time patterns
-                all_elements = soup.find_all(string=lambda text: text and ':' in text)
-                parent_elements = set()
-                for element in all_elements:
-                    if element.parent and ':' in element and len(element.strip()) <= 6:
-                        # This looks like a time, add its parent container
-                        parent_elements.add(element.parent.parent if element.parent.parent else element.parent)
-                train_elements = list(parent_elements)
-                
-                cfg.runConfig.log.info(f"fallback method found {len(train_elements)} potential train entries")
-                
-                for train_element in train_elements:
-                    trayecto = {}
-                    
-                    element_text = train_element.get_text()
-                    
-                    # Extract times (departure and arrival)
-                    time_pattern = r'\b\d{1,2}[:\.]\d{2}\b'
-                    times = re.findall(time_pattern, element_text)
-                    
-                    if len(times) >= 2:
-                        trayecto["salida"] = times[0].replace('.', ':')
-                        trayecto["llegada"] = times[-1].replace('.', ':')
-                    
-                    # Extract train type
-                    train_types = ['AVE', 'AVLO', 'ALVIA', 'INTERCITY', 'CERCANIAS']
-                    for train_type in train_types:
-                        if train_type.lower() in element_text.lower():
-                            trayecto["tipo"] = train_type
-                            break
-                    
-                    # Extract duration
-                    duration_pattern = r'\b\d+h\s*\d*m?i?n?\b'
-                    duration_match = re.search(duration_pattern, element_text)
-                    if duration_match:
-                        trayecto["duracion"] = duration_match.group()
-                    
-                    # Extract prices
-                    price_pattern = r'\b\d+[,\.]\d{0,2}\s*€'
-                    price_matches = re.findall(price_pattern, element_text)
-                    if price_matches:
-                        trayecto["prices"] = [price.strip() for price in price_matches]
-                    
-                    # Only add if we have at least departure time
-                    if "salida" in trayecto:
-                        cfg.runConfig.log.info(f"fallback parsed train: {trayecto}")
-                        
-                        # Check for duplicate times
-                        if len(result.tickets) > 0:
-                            last_ticket = result.tickets[-1]
-                            if (last_ticket.get("salida") == trayecto.get("salida") and 
-                                last_ticket.get("llegada") == trayecto.get("llegada")):
-                                cfg.runConfig.log.debug("found duplicate departure/arrival times, merging prices")
-                                if "prices" in trayecto:
-                                    last_ticket.setdefault("prices", []).extend(trayecto["prices"])
-                            else:
-                                result.tickets.append(trayecto)
-                        else:
-                            result.tickets.append(trayecto)
 
         except WebDriverException as ex:
             cfg.runConfig.log.error(f"error while parsing renfe results. {ex}.")
             if ex.msg == "invalid session id":
-                cfg.runConfig.log.error(
-                    "invalid session id. Probably the session has expired. Exiting")
+                cfg.runConfig.log.error("invalid session id. Probably the session has expired. Exiting")
                 raise ex
         except Exception as ex:
             cfg.runConfig.log.error(f"error while parsing renfe results: {ex}. Continuing...")
