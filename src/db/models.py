@@ -17,28 +17,6 @@ class Metadata(Base):
     def copy(self):
         return Metadata(self.table, self.update_date)
 
-
-class Room(Base):
-    __tablename__ = "rooms"
-    arrival_date = Column(DateTime, primary_key=True)
-    arrival_timestamp = Column(Integer)
-    departure_date = Column(DateTime, primary_key=True)
-    departure_timestamp = Column(Integer)
-    kind = Column(String(100), primary_key=True)
-    price = Column(Float)
-
-    def __init__(self, arrival_date, departure_date, kind, price) -> None:
-        self.arrival_date = arrival_date
-        self.departure_date = departure_date
-        self.kind = kind
-        self.price = price
-        self.arrival_timestamp = int(datetime.timestamp(self.arrival_date))
-        self.departure_timestamp = int(datetime.timestamp(self.departure_date))
-
-    def copy(self):
-        return Room(self.arrival_date, self.departure_date, self.kind, self.price)
-
-
 class RoundTrip(Base):
     __tablename__ = "roundtrips"
     departure_station = Column(String(100), primary_key=True)

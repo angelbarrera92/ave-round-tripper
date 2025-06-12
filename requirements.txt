@@ -1,8 +1,7 @@
 beautifulsoup4==4.13.4
 mysqlclient==2.2.7
 psycopg2-binary==2.9.10
-psycopg2==2.9.10
-python-telegram-bot==13.15
+python-telegram-bot==22.1
 requests==2.32.4
 selenium==4.33.0
 SQLAlchemy==1.4.54

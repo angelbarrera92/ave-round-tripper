@@ -8,7 +8,6 @@ from src.db.db import MySQL, PostgreSQL, Sqlite
 from src.logs.log import log_setup
 from src.notifications.telegram import Telegram
 from src.oportunities.roundtrip import round_trip
-from src.scrapers.iryo import IryoScraper, IryoScraperConfig
 from src.scrapers.renfe import RenfeScraper, RenfeScraperConfig
 from src.scrapers.ouigo import OuigoScraper, OuigoScraperConfig
 
@@ -44,7 +43,6 @@ def run(runConfig: RunConfig):
         start_date = datetime.now()
 
     renfe = RenfeScraper()
-    iryo = IryoScraper()
     ouigo = OuigoScraper()
 
     processed = 0
@@ -70,17 +68,6 @@ def run(runConfig: RunConfig):
             log.error(e)
             exit(1)
         renfe.save(renfeScrapeConfig, result)
-
-        # # IRYO
-        # iryoScraperConfig = IryoScraperConfig(
-        #     runConfig, currentDateFormatted, origin_station, destination_station, renfe_price_change_notification)
-        # try:
-        #     result = iryo.scrape(iryoScraperConfig)
-        # except Exception as e:
-        #     log.error(f"Error scraping {currentDateFormatted} from {origin_station} to {destination_station}")
-        #     log.error(e)
-        #     exit(1)
-        # iryo.save(iryoScraperConfig, result)
 
         # Ouigo
         ouigoScraperConfig = OuigoScraperConfig(
@@ -109,17 +96,6 @@ def run(runConfig: RunConfig):
                 log.error(e)
                 exit(1)
             renfe.save(renfeScrapeConfig, result)
-
-            # # IRYO
-            # iryoScraperConfig = IryoScraperConfig(
-            #     runConfig, currentDateFormatted, origin_station, destination_station, renfe_price_change_notification)
-            # try:
-            #     result = iryo.scrape(iryoScraperConfig)
-            # except Exception as e:
-            #     log.error(f"Error scraping {currentDateFormatted} from {origin_station} to {destination_station}")
-            #     log.error(e)
-            #     exit(1)
-            # iryo.save(iryoScraperConfig, result)
 
             # Ouigo
             ouigoScraperConfig = OuigoScraperConfig(
