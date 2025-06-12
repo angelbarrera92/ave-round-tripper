@@ -38,6 +38,19 @@ class IryoScrapeResult(ScrapeResult):
 class IryoScraper(Scraper):
 
     def __init__(self) -> None:
+        # Don't create driver in __init__ - create it fresh for each scrape
+        self.__start_url = "https://iryo.eu/es/home"
+        self.__driver = None
+
+    def __del__(self):
+        try:
+            if self.__driver:
+                self.__driver.quit()
+        except:
+            pass
+
+    def _create_driver(self):
+        """Create a fresh Chrome driver instance"""
         chrome_options = Options()
         chrome_options.add_argument("--headless")
         chrome_options.add_argument("--disable-infobars")
@@ -47,14 +60,7 @@ class IryoScraper(Scraper):
         chrome_options.add_argument("--window-size=400,1000")
         chrome_options.add_argument(
             "--user-agent=Mozilla/5.0 (X11; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/109.0")
-        self.__driver = webdriver.Chrome(options=chrome_options)
-        self.__start_url = "https://iryo.eu/es/home"
-
-    def __del__(self):
-        try:
-            self.__driver.quit()
-        except:
-            pass
+        return webdriver.Chrome(options=chrome_options)
 
     def scrape(self, cfg: IryoScraperConfig) -> IryoScrapeResult:
         cfg.runConfig.log.info("running IryoScraper")
@@ -62,6 +68,16 @@ class IryoScraper(Scraper):
         cfg.runConfig.log.debug(
             f"day: {cfg.day} | origin_station: {cfg.origin_station} | destination_station: {cfg.destination_station}")
         result = IryoScrapeResult()
+        
+        # Create a fresh driver for each scrape to avoid session issues
+        cfg.runConfig.log.debug("creating fresh browser instance")
+        if self.__driver:
+            try:
+                self.__driver.quit()
+            except:
+                pass
+        self.__driver = self._create_driver()
+        
         try:
             self.__driver.get(self.__start_url)
 
@@ -213,6 +229,15 @@ class IryoScraper(Scraper):
         except Exception as ex:
             cfg.runConfig.log.error(
                 f"error while parsing Iryo results: {ex}. Continuing...")
+        finally:
+            # Clean up driver after each scrape to prevent session issues
+            cfg.runConfig.log.debug("cleaning up browser instance")
+            try:
+                if self.__driver:
+                    self.__driver.quit()
+                    self.__driver = None
+            except:
+                pass
         return result
 
     def save(self, cfg: IryoScraperConfig, result: IryoScrapeResult) -> None:

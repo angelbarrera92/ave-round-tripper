@@ -39,24 +39,34 @@ class RenfeScrapeResult(ScrapeResult):
 class RenfeScraper(Scraper):
 
     def __init__(self) -> None:
+        # Don't create driver in __init__ - create it fresh for each scrape
+        self.__start_url = "https://www.renfe.com/es/es"
+        self.__driver = None
+
+    def __del__(self):
+        try:
+            if self.__driver:
+                self.__driver.quit()
+        except:
+            pass
+
+    def _create_driver(self):
+        """Create a fresh Chrome driver instance"""
         chrome_options = Options()
-        # chrome_options.add_argument("--headless")
+        chrome_options.add_argument("--headless")
         chrome_options.add_argument("--disable-infobars")
         chrome_options.add_argument("--disable-extensions")
         chrome_options.add_argument("--disable-dev-shm-usage")
         chrome_options.add_argument("--no-sandbox")
         chrome_options.add_argument("--window-size=1080,1080")
+        chrome_options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.212 Safari/537.36")
+        chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
+        chrome_options.add_experimental_option('useAutomationExtension', False)
+        chrome_options.add_argument('--disable-blink-features=AutomationControlled')
         
         # Use webdriver-manager for automatic ChromeDriver management
         service = Service(ChromeDriverManager().install())
-        self.__driver = webdriver.Chrome(service=service, options=chrome_options)
-        self.__start_url = "https://www.renfe.com/es/es"
-
-    def __del__(self):
-        try:
-            self.__driver.quit()
-        except:
-            pass
+        return webdriver.Chrome(service=service, options=chrome_options)
 
     def scrape(self, cfg: RenfeScraperConfig) -> RenfeScrapeResult:
         cfg.runConfig.log.info("running RenfeScraper with ENHANCED DUAL CALENDAR SUPPORT")
@@ -64,6 +74,16 @@ class RenfeScraper(Scraper):
         cfg.runConfig.log.debug(
             f"day: {cfg.day} | origin_station: {cfg.origin_station} | destination_station: {cfg.destination_station}")
         result = RenfeScrapeResult()
+        
+        # Create a fresh driver for each scrape to avoid session issues
+        cfg.runConfig.log.debug("creating fresh browser instance")
+        if self.__driver:
+            try:
+                self.__driver.quit()
+            except:
+                pass
+        self.__driver = self._create_driver()
+        
         try:
             self.__driver.get(self.__start_url)
             cfg.runConfig.log.info("waiting for the page to load")
@@ -467,99 +487,290 @@ class RenfeScraper(Scraper):
             self.__driver.execute_script("window.scrollTo(0, 0);")
             sleep(1) # Give a moment for the scroll to complete
 
-            # Submit the search
-            cfg.runConfig.log.info("submitting the search form")
+            # Save screenshot before attempting to submit
+            self.__driver.save_screenshot("debug_before_submit.png")
+            cfg.runConfig.log.info("Saved screenshot: debug_before_submit.png")
+
+            # Submit the search - ENHANCED SEARCH BUTTON DETECTION
+            cfg.runConfig.log.info("submitting the search form - ENHANCED DETECTION")
+            
+            # First, let's find ALL buttons and log them for debugging
+            all_buttons = self.__driver.find_elements(By.TAG_NAME, "button")
+            cfg.runConfig.log.info(f"Found {len(all_buttons)} buttons on the page")
+            
+            for i, btn in enumerate(all_buttons):
+                try:
+                    btn_text = btn.text.strip()
+                    btn_id = btn.get_attribute('id')
+                    btn_class = btn.get_attribute('class')
+                    btn_type = btn.get_attribute('type')
+                    is_displayed = btn.is_displayed()
+                    is_enabled = btn.is_enabled()
+                    cfg.runConfig.log.debug(f"Button {i}: text='{btn_text}', id='{btn_id}', class='{btn_class}', type='{btn_type}', displayed={is_displayed}, enabled={is_enabled}")
+                except Exception as e:
+                    cfg.runConfig.log.debug(f"Error inspecting button {i}: {e}")
+            
+            # Enhanced search button selectors
             search_button_selectors = [
                 "button[type='submit']",
-                ".search-button", 
+                "button:contains('Buscar')",
+                "button:contains('BUSCAR')",
+                "*[class*='search']",
+                "*[class*='buscar']",
+                "*[id*='search']",
+                "*[id*='buscar']",
                 ".rf-button",
                 "button.mdc-button",
-                "button[data-testid*='search']"
+                "button[data-testid*='search']",
+                "[role='button']",
+                "input[type='submit']"
             ]
             
             search_submitted = False
+            
+            # Strategy 1: Try enhanced selectors
             for selector in search_button_selectors:
                 try:
-                    buttons = self.__driver.find_elements(By.CSS_SELECTOR, selector)
-                    for button in buttons:
-                        if button.is_displayed() and button.is_enabled():
-                            button_text = button.text.lower()
-                            if any(word in button_text for word in ['buscar', 'search', 'consultar']):
-                                button.click()
-                                search_submitted = True
-                                cfg.runConfig.log.debug(f"clicked search button: {selector}")
-                                break
+                    elements = self.__driver.find_elements(By.CSS_SELECTOR, selector)
+                    cfg.runConfig.log.debug(f"Selector '{selector}' found {len(elements)} elements")
+                    
+                    for element in elements:
+                        try:
+                            if element.is_displayed() and element.is_enabled():
+                                element_text = element.text.lower().strip()
+                                element_value = element.get_attribute('value')
+                                if element_value:
+                                    element_value = element_value.lower().strip()
+                                
+                                cfg.runConfig.log.debug(f"Checking element: text='{element_text}', value='{element_value}'")
+                                
+                                # Check if this looks like a search button
+                                search_keywords = ['buscar', 'search', 'consultar', 'enviar', 'submit']
+                                if (any(word in element_text for word in search_keywords) or 
+                                    (element_value and any(word in element_value for word in search_keywords))):
+                                    
+                                    cfg.runConfig.log.info(f"Attempting to click search element with text='{element_text}', value='{element_value}'")
+                                    
+                                    # Scroll into view and click
+                                    self.__driver.execute_script("arguments[0].scrollIntoView(true);", element)
+                                    sleep(0.5)
+                                    
+                                    # Try multiple click methods
+                                    try:
+                                        element.click()
+                                        cfg.runConfig.log.info("✅ Successfully clicked with standard click")
+                                        search_submitted = True
+                                        break
+                                    except:
+                                        try:
+                                            self.__driver.execute_script("arguments[0].click();", element)
+                                            cfg.runConfig.log.info("✅ Successfully clicked with JavaScript click")
+                                            search_submitted = True
+                                            break
+                                        except Exception as e:
+                                            cfg.runConfig.log.debug(f"Both click methods failed: {e}")
+                        except Exception as e:
+                            cfg.runConfig.log.debug(f"Error checking element: {e}")
+                    
                     if search_submitted:
                         break
+                        
                 except Exception as e:
-                    cfg.runConfig.log.debug(f"selector {selector} failed: {e}")
+                    cfg.runConfig.log.debug(f"Selector '{selector}' failed: {e}")
+            
+            # Strategy 2: Try clicking any button that looks like search
+            if not search_submitted:
+                cfg.runConfig.log.debug("🔄 Strategy 2: Trying any button that looks like search")
+                for i, btn in enumerate(all_buttons):
+                    try:
+                        if btn.is_displayed() and btn.is_enabled():
+                            btn_text = btn.text.lower().strip()
+                            btn_value = btn.get_attribute('value') or ""
+                            btn_value = btn_value.lower().strip()
+                            
+                            search_keywords = ['buscar', 'search', 'consultar', 'enviar']
+                            if (any(word in btn_text for word in search_keywords) or 
+                                any(word in btn_value for word in search_keywords)):
+                                
+                                cfg.runConfig.log.info(f"Strategy 2: Attempting button {i} with text='{btn_text}'")
+                                try:
+                                    self.__driver.execute_script("arguments[0].scrollIntoView(true);", btn)
+                                    sleep(0.5)
+                                    btn.click()
+                                    search_submitted = True
+                                    cfg.runConfig.log.info("✅ Strategy 2 successful")
+                                    break
+                                except:
+                                    try:
+                                        self.__driver.execute_script("arguments[0].click();", btn)
+                                        search_submitted = True
+                                        cfg.runConfig.log.info("✅ Strategy 2 successful with JS click")
+                                        break
+                                    except Exception as e:
+                                        cfg.runConfig.log.debug(f"Strategy 2 button {i} failed: {e}")
+                    except Exception as e:
+                        cfg.runConfig.log.debug(f"Strategy 2 error with button {i}: {e}")
+            
+            # Strategy 3: Try form submission
+            if not search_submitted:
+                cfg.runConfig.log.debug("🔄 Strategy 3: Trying form submission")
+                try:
+                    forms = self.__driver.find_elements(By.TAG_NAME, "form")
+                    cfg.runConfig.log.debug(f"Found {len(forms)} forms")
+                    
+                    for i, form in enumerate(forms):
+                        try:
+                            cfg.runConfig.log.debug(f"Trying to submit form {i}")
+                            form.submit()
+                            search_submitted = True
+                            cfg.runConfig.log.info("✅ Strategy 3: Form submission successful")
+                            break
+                        except Exception as e:
+                            cfg.runConfig.log.debug(f"Form {i} submission failed: {e}")
+                except Exception as e:
+                    cfg.runConfig.log.debug(f"Strategy 3 failed: {e}")
+            
+            # Strategy 4: Try pressing Enter on various form fields
+            if not search_submitted:
+                cfg.runConfig.log.debug("🔄 Strategy 4: Trying Enter key on form fields")
+                field_ids = ["first-input", "origin", "destination"]
+                
+                for field_id in field_ids:
+                    try:
+                        field = self.__driver.find_element(By.ID, field_id)
+                        if field.is_displayed() and field.is_enabled():
+                            cfg.runConfig.log.debug(f"Trying Enter on field: {field_id}")
+                            field.send_keys(Keys.ENTER)
+                            search_submitted = True
+                            cfg.runConfig.log.info(f"✅ Strategy 4: Enter successful on {field_id}")
+                            break
+                    except Exception as e:
+                        cfg.runConfig.log.debug(f"Strategy 4 failed on {field_id}: {e}")
             
             if not search_submitted:
-                # Fallback: try pressing Enter on the date field
-                cfg.runConfig.log.debug("trying Enter key as fallback")
+                cfg.runConfig.log.error("All attempts to submit the search form failed.")
+                # Save screenshot and page source if submission failed
+                self.__driver.save_screenshot("debug_submit_failed.png")
+                with open('debug_submit_failed.html', 'w', encoding='utf-8') as f:
+                    f.write(self.__driver.page_source)
+                cfg.runConfig.log.info("Saved screenshot: debug_submit_failed.png and page source: debug_submit_failed.html")
+                # Return empty result (cleanup will happen in finally block)
+            else:
+                # Wait for results to load and verify navigation
+                cfg.runConfig.log.info("waiting for search results and verifying navigation")
+                
+                # Check current URL to see if we've navigated away from the search page
+                current_url = self.__driver.current_url
+                cfg.runConfig.log.info(f"Current URL after submit attempt: {current_url}")
+                
+                # Wait for potential page navigation or results to load
+                initial_wait = 5
+                cfg.runConfig.log.debug(f"Initial wait of {initial_wait} seconds for navigation")
+                sleep(initial_wait)
+                
+                # Check if URL changed (indicating navigation to results page)
+                new_url = self.__driver.current_url
+                if new_url != current_url:
+                    cfg.runConfig.log.info(f"✅ Page navigated! New URL: {new_url}")
+                    # Give more time for results to load after navigation
+                    sleep(8)
+                else:
+                    cfg.runConfig.log.warning(f"⚠️ No navigation detected. Still on: {new_url}")
+                    # Try waiting a bit more in case it's a slow response
+                    cfg.runConfig.log.debug("Waiting additional time in case of slow response")
+                    sleep(10)
+                    
+                    # Check URL again
+                    final_url = self.__driver.current_url
+                    if final_url != current_url:
+                        cfg.runConfig.log.info(f"✅ Late navigation detected! Final URL: {final_url}")
+                    else:
+                        cfg.runConfig.log.error(f"❌ No navigation occurred. Form submission likely failed.")
+                
+                # Look for indicators that we're on a results page
+                results_indicators = [
+                    ".selectedTren",  # Train results
+                    "[class*='result']",  # Generic results
+                    "[class*='tren']",  # Spanish for train
+                    "[class*='viaje']",  # Spanish for journey
+                    ".train-option",
+                    ".journey-option"
+                ]
+                
+                results_found = False
+                for indicator in results_indicators:
+                    try:
+                        elements = self.__driver.find_elements(By.CSS_SELECTOR, indicator)
+                        if elements:
+                            cfg.runConfig.log.info(f"✅ Found {len(elements)} result elements with selector: {indicator}")
+                            results_found = True
+                            break
+                    except:
+                        continue
+                
+                if not results_found:
+                    cfg.runConfig.log.warning("⚠️ No result indicators found on current page")
+                
+                self.__driver.save_screenshot("debug_after_submit_attempt.png")
+                cfg.runConfig.log.info("Saved screenshot: debug_after_submit_attempt.png")
+                with open('debug_after_submit_attempt.html', 'w', encoding='utf-8') as f:
+                    f.write(self.__driver.page_source)
+                cfg.runConfig.log.info("Saved page source: debug_after_submit_attempt.html")
+
+
+                # Parse the results using BeautifulSoup
+                cfg.runConfig.log.info("parsing search results")
+                soup = BeautifulSoup(self.__driver.page_source, "html.parser")
+                
+                # Save page source for debugging
                 try:
-                    date_input.send_keys(Keys.ENTER)
-                    search_submitted = True
+                    with open('debug_results_page_renfe.html', 'w', encoding='utf-8') as f:
+                        f.write(self.__driver.page_source)
                 except:
                     pass
-
-            # Wait for results to load
-            cfg.runConfig.log.info("waiting for search results")
-            sleep(10)
-
-            # Parse the results using BeautifulSoup
-            cfg.runConfig.log.info("parsing search results")
-            soup = BeautifulSoup(self.__driver.page_source, "html.parser")
-            
-            # Save page source for debugging
-            try:
-                with open('debug_results_page_renfe.html', 'w', encoding='utf-8') as f:
-                    f.write(self.__driver.page_source)
-            except:
-                pass
-            
-            # Look for train entries
-            train_elements = soup.find_all('div', class_='selectedTren')
-            cfg.runConfig.log.info(f"found {len(train_elements)} train entries")
-            
-            for train_element in train_elements:
-                trayecto = {}
                 
-                # Extract departure and arrival times from h5 elements
-                time_elements = train_element.find_all('h5', {'aria-hidden': 'true'})
-                if len(time_elements) >= 2:
-                    departure_text = time_elements[0].get_text().strip()
-                    arrival_text = time_elements[-1].get_text().strip()
+                # Look for train entries
+                train_elements = soup.find_all('div', class_='selectedTren')
+                cfg.runConfig.log.info(f"found {len(train_elements)} train entries")
+                
+                for train_element in train_elements:
+                    trayecto = {}
                     
-                    # Extract time from text like "17:57 h"
-                    dep_match = re.search(r'(\d{1,2}:\d{2})', departure_text)
-                    arr_match = re.search(r'(\d{1,2}:\d{2})', arrival_text)
+                    # Extract departure and arrival times from h5 elements
+                    time_elements = train_element.find_all('h5', {'aria-hidden': 'true'})
+                    if len(time_elements) >= 2:
+                        departure_text = time_elements[0].get_text().strip()
+                        arrival_text = time_elements[-1].get_text().strip()
+                        
+                        # Extract time from text like "17:57 h"
+                        dep_match = re.search(r'(\d{1,2}:\d{2})', departure_text)
+                        arr_match = re.search(r'(\d{1,2}:\d{2})', arrival_text)
+                        
+                        if dep_match and arr_match:
+                            trayecto["salida"] = dep_match.group(1)
+                            trayecto["llegada"] = arr_match.group(1)
                     
-                    if dep_match and arr_match:
-                        trayecto["salida"] = dep_match.group(1)
-                        trayecto["llegada"] = arr_match.group(1)
-                
-                # Extract train type from image alt text
-                train_img = train_element.find('img', alt=re.compile(r'Tipo de tren', re.IGNORECASE))
-                if train_img:
-                    alt_text = train_img.get('alt', '')
-                    train_type_match = re.search(r'Tipo de tren (\w+)', alt_text, re.IGNORECASE)
-                    if train_type_match:
-                        trayecto["tipo"] = train_type_match.group(1).upper()
-                
-                # Extract price from precio-final span
-                price_element = train_element.find('span', class_='precio-final')
-                if price_element:
-                    price_text = price_element.get_text().strip()
-                    price_match = re.search(r'([\d,]+(?:\.\d{2})?)\s*€', price_text)
-                    if price_match:
-                        price_str = price_match.group(1).replace(',', '.')
-                        trayecto["prices"] = [price_str + ' €']
-                
-                # Only add if we have at least departure time
-                if "salida" in trayecto:
-                    cfg.runConfig.log.info(f"parsed train: {trayecto}")
-                    result.tickets.append(trayecto)
+                    # Extract train type from image alt text
+                    train_img = train_element.find('img', alt=re.compile(r'Tipo de tren', re.IGNORECASE))
+                    if train_img:
+                        alt_text = train_img.get('alt', '')
+                        train_type_match = re.search(r'Tipo de tren (\w+)', alt_text, re.IGNORECASE)
+                        if train_type_match:
+                            trayecto["tipo"] = train_type_match.group(1).upper()
+                    
+                    # Extract price from precio-final span
+                    price_element = train_element.find('span', class_='precio-final')
+                    if price_element:
+                        price_text = price_element.get_text().strip()
+                        price_match = re.search(r'([\d,]+(?:\.\d{2})?)\s*€', price_text)
+                        if price_match:
+                            price_str = price_match.group(1).replace(',', '.')
+                            trayecto["prices"] = [price_str + ' €']
+                    
+                    # Only add if we have at least departure time
+                    if "salida" in trayecto:
+                        cfg.runConfig.log.info(f"parsed train: {trayecto}")
+                        result.tickets.append(trayecto)
 
         except WebDriverException as ex:
             cfg.runConfig.log.error(f"error while parsing renfe results. {ex}.")
@@ -568,6 +779,15 @@ class RenfeScraper(Scraper):
                 raise ex
         except Exception as ex:
             cfg.runConfig.log.error(f"error while parsing renfe results: {ex}. Continuing...")
+        finally:
+            # Clean up driver after each scrape to prevent session issues
+            cfg.runConfig.log.debug("cleaning up browser instance")
+            try:
+                if self.__driver:
+                    self.__driver.quit()
+                    self.__driver = None
+            except:
+                pass
         return result
 
     def save(self, cfg: RenfeScraperConfig, result: RenfeScrapeResult) -> None:

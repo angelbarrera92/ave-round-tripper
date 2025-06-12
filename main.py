@@ -61,15 +61,15 @@ def run(runConfig: RunConfig):
         destination_station = travel_to
 
         # Renfe
-        # renfeScrapeConfig = RenfeScraperConfig(
-        #     runConfig, currentDateFormatted, origin_station, destination_station, renfe_price_change_notification)
-        # try:
-        #     result = renfe.scrape(renfeScrapeConfig)
-        # except Exception as e:
-        #     log.error(f"Error scraping {currentDateFormatted} from {origin_station} to {destination_station}")
-        #     log.error(e)
-        #     exit(1)
-        # renfe.save(renfeScrapeConfig, result)
+        renfeScrapeConfig = RenfeScraperConfig(
+            runConfig, currentDateFormatted, origin_station, destination_station, renfe_price_change_notification)
+        try:
+            result = renfe.scrape(renfeScrapeConfig)
+        except Exception as e:
+            log.error(f"Error scraping {currentDateFormatted} from {origin_station} to {destination_station}")
+            log.error(e)
+            exit(1)
+        renfe.save(renfeScrapeConfig, result)
 
         # # IRYO
         # iryoScraperConfig = IryoScraperConfig(
@@ -82,7 +82,7 @@ def run(runConfig: RunConfig):
         #     exit(1)
         # iryo.save(iryoScraperConfig, result)
 
-        # # Ouigo
+        # Ouigo
         ouigoScraperConfig = OuigoScraperConfig(
             runConfig, currentDateFormatted, origin_station, destination_station, renfe_price_change_notification)
         try:
@@ -100,15 +100,15 @@ def run(runConfig: RunConfig):
             destination_station = travel_from
 
             # Renfe
-            # renfeScrapeConfig = RenfeScraperConfig(
-            #     runConfig, currentDateFormatted, origin_station, destination_station, renfe_price_change_notification)
-            # try:
-            #     result = renfe.scrape(renfeScrapeConfig)
-            # except Exception as e:
-            #     log.error(f"Error scraping {currentDateFormatted} from {origin_station} to {destination_station}")
-            #     log.error(e)
-            #     exit(1)
-            # renfe.save(renfeScrapeConfig, result)
+            renfeScrapeConfig = RenfeScraperConfig(
+                runConfig, currentDateFormatted, origin_station, destination_station, renfe_price_change_notification)
+            try:
+                result = renfe.scrape(renfeScrapeConfig)
+            except Exception as e:
+                log.error(f"Error scraping {currentDateFormatted} from {origin_station} to {destination_station}")
+                log.error(e)
+                exit(1)
+            renfe.save(renfeScrapeConfig, result)
 
             # # IRYO
             # iryoScraperConfig = IryoScraperConfig(
@@ -121,7 +121,7 @@ def run(runConfig: RunConfig):
             #     exit(1)
             # iryo.save(iryoScraperConfig, result)
 
-            # # Ouigo
+            # Ouigo
             ouigoScraperConfig = OuigoScraperConfig(
                 runConfig, currentDateFormatted, origin_station, destination_station, renfe_price_change_notification)
             try:

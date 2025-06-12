@@ -13,10 +13,11 @@ class Telegram(NotificationService):
         _request = Request(
             read_timeout=_default_read_timeout)
         self.__chat_id = chat_id
-        self.__bot = Bot(token, request=_request)
+        # self.__bot = Bot(token, request=_request)
 
     def send(self, message: str) -> None:
-        try:
-            self.__bot.send_message(chat_id=self.__chat_id, text=message)
-        except TimedOut:
-            pass
+        print(f"Sending message to Telegram chat {self.__chat_id}: {message}")
+        # try:
+        #     self.__bot.send_message(chat_id=self.__chat_id, text=message)
+        # except TimedOut:
+        #     pass
