@@ -1,0 +1,34 @@
+# fly.toml file generated for sizing on 2022-08-12T07:43:07+02:00
+# flyctl apps create
+# flyctl scale memory 512
+# flyctl postgres create
+# flyctl postgres attach --app sizing --postgres-app renfedb
+# flyctl deploy -r fra
+
+app = "ave-cordoba-zaragoza"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  TRAVEL_DEBUG = "no"
+  TRAVEL_LOG_LEVEL = "debug"
+  TRAVEL_DB_ENGINE = "postgres"
+  TRAVEL_DB_PATH = ""
+  TRAVEL_DB_HOST = "top2.nearest.of.ave-madrid-zaragoza-db.internal"
+  TRAVEL_DB_PORT = "5432"
+  TRAVEL_DB_USER = "ave_cordoba_zaragoza"
+  TRAVEL_DB_PASSWORD = "0HvK3i9RKJFMFIR"
+  TRAVEL_DB_NAME = "ave_cordoba_zaragoza"
+  TRAVEL_NOTIFICATION_TOKEN = "5788629872:AAGwH8yKk-q3-HmUaNSmjUiQ36kf2MZsJl0"
+  TRAVEL_NOTIFICATION_CHAT_ID = "-653807382"
+  TRAVEL_FROM = "Cordoba"
+  TRAVEL_TO = "Zaragoza"
+  ROUND_TRIP_ENABLED = "False"
+  TRAVEL_RENFE_PRICE_CHANGE_NOTIFICATION = "True"
+  TRAVEL_START_DATE = "08/01/2023"
+  TRAVEL_DAYS = "1"
+  ROUND_TRIP_NOTIFICATION_MAX_PRICE = "0"
+  ROUND_TRIP_ORIGIN_DEPARTURE_TIME = "0"
+  ROUND_TRIP_DESTINATION_DEPARTURE_TIME = "0"
+  TRAVEL_HISTORICAL_DATA_DAYS = "30"

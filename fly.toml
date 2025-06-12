@@ -1,0 +1,39 @@
+# fly.toml file generated for sizing on 2022-08-12T07:43:07+02:00
+# flyctl apps create
+# flyctl scale memory 512
+# flyctl postgres create
+# flyctl postgres attach --app sizing --postgres-app renfedb
+# flyctl deploy -r fra
+
+app = "ave-madrid-zaragoza"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[[services]]
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+
+[env]
+  TRAVEL_DEBUG = "no"
+  TRAVEL_LOG_LEVEL = "info"
+  TRAVEL_DB_ENGINE = "postgres"
+  TRAVEL_DB_PATH = ""
+  TRAVEL_DB_HOST = "top2.nearest.of.ave-madrid-zaragoza-db.internal"
+  TRAVEL_DB_PORT = "5432"
+  TRAVEL_DB_USER = "ave_madrid_zaragoza"
+  TRAVEL_DB_PASSWORD = "sXgeIt6coNIH7XS"
+  TRAVEL_DB_NAME = "ave_madrid_zaragoza"
+  TRAVEL_NOTIFICATION_TOKEN = "2063692068:AAGh-WphJ-G4m5YdEo3ltquq3A89aHWu0Cc"
+  TRAVEL_NOTIFICATION_CHAT_ID = "-707616993"
+  TRAVEL_FROM = "Madrid"
+  TRAVEL_TO = "Zaragoza"
+  ROUND_TRIP_ENABLED = "True"
+  TRAVEL_RENFE_PRICE_CHANGE_NOTIFICATION = "False"
+  TRAVEL_START_DATE = ""
+  TRAVEL_DAYS = "90"
+  ROUND_TRIP_NOTIFICATION_MAX_PRICE = "45"
+  ROUND_TRIP_ORIGIN_DEPARTURE_TIME = "06:30,07:05"
+  ROUND_TRIP_DESTINATION_DEPARTURE_TIME = "15:44,15:45,17:45,18:26,20:45,15:19,16:19,17:19"
+  TRAVEL_HISTORICAL_DATA_DAYS = "30"
