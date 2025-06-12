@@ -32,6 +32,7 @@ class OuigoScraper(Scraper):
         super().__init__()
         self.__username = "ouigo.web"
         self.__password = "SquirelWeb!2020"
+        # Reverted to older, potentially working API endpoints
         self.__login_url = "https://mdw02.api-es.ouigo.com/api/Token/login"
         self.__stations_url = "https://mdw02.api-es.ouigo.com/api/Data/GetStations"
         self.__journey_url = "https://mdw02.api-es.ouigo.com/api/Sale/journeysearch"
@@ -46,67 +47,129 @@ class OuigoScraper(Scraper):
             f"day: {cfg.day} | origin_station: {cfg.origin_station} | destination_station: {cfg.destination_station}")
         result = OuigoScrapeResult()
         try:
-            token = requests.post(self.__login_url, json={
+            # Reverted login mechanism
+            cfg.runConfig.log.debug(f"Attempting login to {self.__login_url}")
+            token_response = requests.post(self.__login_url, json={
                 "username": self.__username,
                 "password": self.__password
-            }).json()["token"]
-            cfg.runConfig.log.debug(f"token: {token}")
+            })
+            token_response.raise_for_status() 
+            token_data = token_response.json()
 
-            stations = requests.get(self.__stations_url).json()
+            if "token" not in token_data:
+                cfg.runConfig.log.error(f"Login failed: 'token' not in response. Response: {token_data}")
+                return result
+            token = token_data["token"]
+            cfg.runConfig.log.debug(f"Token obtained: {token[:20]}...")
+
+            # Fetch stations using the older endpoint (no token usually required for this specific old endpoint)
+            cfg.runConfig.log.debug(f"Fetching stations from {self.__stations_url}")
+            stations_response = requests.get(self.__stations_url)
+            stations_response.raise_for_status()
+            stations_json = stations_response.json()
+            cfg.runConfig.log.debug(f"Stations response (first 500 chars): {str(stations_json)[:500]}")
+
             origin_station_code = ""
             destination_station_code = ""
-            for station in stations:
-                if not station["hidden"]:
-                    if cfg.origin_station in station["synonyms"]:
-                        cfg.runConfig.log.debug(f"origin station found: {station['name']}")
-                        origin_station_code = station["_u_i_c_station_code"]
-                    if cfg.destination_station in station["synonyms"]:
-                        cfg.runConfig.log.debug(f"destination station found: {station['name']}")
-                        destination_station_code = station["_u_i_c_station_code"]
-            cfg.runConfig.log.debug(f"origin station code: {origin_station_code}")
-            cfg.runConfig.log.debug(f"destination station code: {destination_station_code}")
-            if origin_station_code == "" or destination_station_code == "":
-                cfg.runConfig.log.error("origin or destination station not found")
+
+            # Restored original station parsing logic
+            for station in stations_json:
+                if not station.get("hidden", True): # Default to hidden if key missing
+                    # Check if synonyms exist and is a list before iterating
+                    synonyms = station.get("synonyms", [])
+                    if isinstance(synonyms, list):
+                        if cfg.origin_station in synonyms:
+                            cfg.runConfig.log.debug(f"Origin station found: {station.get('name')}")
+                            origin_station_code = station.get("_u_i_c_station_code")
+                        if cfg.destination_station in synonyms:
+                            cfg.runConfig.log.debug(f"Destination station found: {station.get('name')}")
+                            destination_station_code = station.get("_u_i_c_station_code")
+            
+            if not origin_station_code:
+                 cfg.runConfig.log.warning(f"Origin station '{cfg.origin_station}' not found using original parsing logic.")
+            if not destination_station_code:
+                 cfg.runConfig.log.warning(f"Destination station '{cfg.destination_station}' not found using original parsing logic.")
+
+            cfg.runConfig.log.debug(f"Origin station code: {origin_station_code}")
+            cfg.runConfig.log.debug(f"Destination station code: {destination_station_code}")
+
+            if not origin_station_code or not destination_station_code:
+                cfg.runConfig.log.error("Origin or destination station code not found. Halting.")
                 return result
-            # cfg.day looks like 15/06/2023 and we need 2023-06-15
+            
             outbound_date = datetime.strptime(cfg.day, "%d/%m/%Y").strftime("%Y-%m-%d")
-            journeys = requests.post(self.__journey_url, json={
+
+            # Restored original journey search payload structure
+            journey_payload = {
                 "destination": destination_station_code,
                 "origin": origin_station_code,
                 "outbound_date": outbound_date,
                 "passengers": [{
                     "discount_cards": [],
-                    "disability_type": "NH",
-                    "type": "A"
+                    "disability_type": "NH", # Assuming "NH" is a default or common value
+                    "type": "A" # Assuming "A" for Adult
                 }]
-            }, headers={
+            }
+            cfg.runConfig.log.debug(f"Searching journeys with payload: {journey_payload} to {self.__journey_url}")
+            
+            journeys_response = requests.post(self.__journey_url, json=journey_payload, headers={
                 "Authorization": f"Bearer {token}"
-            }).json()
-            cfg.runConfig.log.debug(f"journeys: {journeys}")
+            })
+            journeys_response.raise_for_status()
+            journeys_json = journeys_response.json()
+            cfg.runConfig.log.debug(f"Journeys response (first 500 chars): {str(journeys_json)[:500]}")
 
-            for journey in journeys["outbound"]:
-                trayecto = {}
-                price = journey["price"]
-                departureTime = journey["departure_station"]["departure_timestamp"]
-                # This is an example of departureTime 2023-06-15T07:05:00+02:00. We need 07:05. Parse it using datetime
-                departureTime = datetime.strptime(departureTime, "%Y-%m-%dT%H:%M:%S%z").strftime("%H:%M")
-                arrivalTime = journey["arrival_station"]["arrival_timestamp"]
-                # This is an example of arrivalTime 2023-06-15T09:22:00+02:00. We need 09:22. Parse it using datetime
-                arrivalTime = datetime.strptime(arrivalTime, "%Y-%m-%dT%H:%M:%S%z").strftime("%H:%M")
-                # Calculate duration from departureTime and arrivalTime
-                duration = datetime.strptime(arrivalTime, "%H:%M") - datetime.strptime(departureTime, "%H:%M")
-                # Represent the duration as a string in the format xh:xm (e.g. 1h:30m)
-                duration = f"{duration.seconds // 3600}h:{(duration.seconds // 60) % 60}m"
-                trayecto["salida"] = departureTime
-                trayecto["duracion"] = duration
-                trayecto["llegada"] = arrivalTime
-                trayecto["tipo"] = "Ouigo"
-                trayecto["prices"] = [price]
-                cfg.runConfig.log.info(f"trayecto: {trayecto}")
-                result.tickets.append(trayecto)
+            # Restored original journey parsing logic
+            if "outbound" in journeys_json and isinstance(journeys_json["outbound"], list):
+                for journey in journeys_json["outbound"]:
+                    trayecto = {}
+                    price = journey.get("price")
+                    
+                    departure_station_info = journey.get("departure_station", {})
+                    arrival_station_info = journey.get("arrival_station", {})
+
+                    departure_timestamp_str = departure_station_info.get("departure_timestamp")
+                    arrival_timestamp_str = arrival_station_info.get("arrival_timestamp")
+
+                    if not price or not departure_timestamp_str or not arrival_timestamp_str:
+                        cfg.runConfig.log.warning(f"Skipping journey due to missing data: price={price}, departure={departure_timestamp_str}, arrival={arrival_timestamp_str}")
+                        continue
+
+                    try:
+                        # Example: 2023-06-15T07:05:00+02:00
+                        departure_dt_obj = datetime.strptime(departure_timestamp_str, "%Y-%m-%dT%H:%M:%S%z")
+                        arrival_dt_obj = datetime.strptime(arrival_timestamp_str, "%Y-%m-%dT%H:%M:%S%z")
+
+                        departure_time_str = departure_dt_obj.strftime("%H:%M")
+                        arrival_time_str = arrival_dt_obj.strftime("%H:%M")
+                        
+                        duration_delta = arrival_dt_obj - departure_dt_obj
+                        duration_hours = duration_delta.seconds // 3600
+                        duration_minutes = (duration_delta.seconds // 60) % 60
+                        duration_str = f"{duration_hours}h:{duration_minutes:02d}m"
+
+                        trayecto["salida"] = departure_time_str
+                        trayecto["duracion"] = duration_str
+                        trayecto["llegada"] = arrival_time_str
+                        trayecto["tipo"] = "Ouigo" # Hardcoded as per original
+                        trayecto["prices"] = [price] # Original logic stored price in a list
+                        
+                        cfg.runConfig.log.info(f"Trayecto found: {trayecto}")
+                        result.tickets.append(trayecto)
+                    except ValueError as ve:
+                        cfg.runConfig.log.error(f"Error parsing date/time for journey: {ve}. Data: dep='{departure_timestamp_str}', arr='{arrival_timestamp_str}'")
+                        continue
+            else:
+                cfg.runConfig.log.warning(f"No 'outbound' journeys found or not in expected format in response. Keys: {journeys_json.keys()}")
+
+        except requests.exceptions.HTTPError as http_err:
+            cfg.runConfig.log.error(f"HTTP error occurred: {http_err}")
+            if http_err.response is not None:
+                cfg.runConfig.log.error(f"Response status code: {http_err.response.status_code}")
+                cfg.runConfig.log.error(f"Response content: {http_err.response.text}")
+            cfg.runConfig.log.error(traceback.format_exc())
         except Exception as ex:
-            cfg.runConfig.log.error("error while scraping")
-            cfg.runConfig.log.error(ex)
+            cfg.runConfig.log.error(f"An error occurred while scraping Ouigo: {ex}")
             cfg.runConfig.log.error(traceback.format_exc())
         return result
 

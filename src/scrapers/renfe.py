@@ -3,9 +3,7 @@ import re
 
 from bs4 import BeautifulSoup
 from selenium import webdriver
-from selenium.common.exceptions import (NoSuchElementException,
-                                        StaleElementReferenceException,
-                                        WebDriverException)
+from selenium.common.exceptions import WebDriverException
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
@@ -176,9 +174,6 @@ class RenfeScraper(Scraper):
                 raise
             
             # DUAL CALENDAR NAVIGATION LOGIC
-            current_month = datetime.now().month
-            current_year = datetime.now().year
-            
             # Spanish month names for matching
             spanish_months = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 
                             'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre']
@@ -518,7 +513,7 @@ class RenfeScraper(Scraper):
             
             # Save page source for debugging
             try:
-                with open('/Users/barreang/personal/ave-round-tripper/debug_results_page.html', 'w', encoding='utf-8') as f:
+                with open('debug_results_page_renfe.html', 'w', encoding='utf-8') as f:
                     f.write(self.__driver.page_source)
             except:
                 pass
@@ -642,10 +637,20 @@ def lower_price(prices):
     prices_as_floats = list()
     if len(prices) > 0:
         for price in prices:
+            # Keep digits, commas, and decimal points
             price_as_float = "".join(
-                i for i in price if i.isdigit() or i == ",")
+                i for i in price if i.isdigit() or i == "," or i == ".")
             if price_as_float:
-                price_as_float = float(price_as_float.replace(",", "."))
+                # Handle both European (comma) and US (dot) decimal formats
+                # If there's both comma and dot, assume comma is thousands separator
+                if "," in price_as_float and "." in price_as_float:
+                    # Format like "1,234.56" - remove comma (thousands separator)
+                    price_as_float = price_as_float.replace(",", "")
+                else:
+                    # Format like "24,23" - replace comma with dot for decimal
+                    price_as_float = price_as_float.replace(",", ".")
+                
+                price_as_float = float(price_as_float)
                 prices_as_floats.append(price_as_float)
     if len(prices_as_floats) > 0:
         return sorted(prices_as_floats)[0]
