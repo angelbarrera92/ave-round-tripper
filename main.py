@@ -7,6 +7,7 @@ from src.db.clean import clean_old_timeseries
 from src.db.db import MySQL, PostgreSQL, Sqlite
 from src.logs.log import log_setup
 from src.notifications.telegram import Telegram
+from src.notifications.console import ConsoleNotification  # Added import
 from src.oportunities.roundtrip import round_trip
 from src.scrapers.renfe import RenfeScraper, RenfeScraperConfig
 from src.scrapers.ouigo import OuigoScraper, OuigoScraperConfig
@@ -176,8 +177,12 @@ if __name__ == "__main__":
 
     # Init Telegram Notification service
     notify_token = getenv("TRAVEL_NOTIFICATION_TOKEN")
-    notify_chat_id = int(getenv("TRAVEL_NOTIFICATION_CHAT_ID"))
-    notification = Telegram(notify_token, notify_chat_id)
+    notify_chat_id = getenv("TRAVEL_NOTIFICATION_CHAT_ID") # Changed to getenv
+
+    if notify_token and notify_chat_id: # Added conditional
+        notification = Telegram(notify_token, int(notify_chat_id)) # Added int conversion
+    else:
+        notification = ConsoleNotification(log) # Added ConsoleNotification instantiation
 
     # Create configuration struct
     runConfig = RunConfig(log, db, notification)

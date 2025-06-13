@@ -1,12 +1,14 @@
 FROM selenium/standalone-chrome:latest
 
-RUN sudo apt-get update \
-    && sudo apt-get install -yqq python3-dev default-libmysqlclient-dev build-essential pkg-config python3-pip \
-    && sudo rm -rf /var/lib/apt/lists/*
+USER 0
+
+RUN apt-get update \
+    && apt-get install -yqq python3-dev default-libmysqlclient-dev build-essential pkg-config python3-pip \
+    && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt requirements.txt
-USER 0
-RUN pip install --upgrade pip && pip install -r requirements.txt
+RUN pip install --upgrade pip
+RUN pip install -r requirements.txt
 
 ENV TRAVEL_LOG_LEVEL=info
 ENV TRAVEL_DB_PATH=
