@@ -106,35 +106,36 @@ def _round_trip_trains(cfg: RunConfig, origin: str, fromOriginAt: str, destinati
             cfg.db.session.add(roundTrip)
             cfg.db.session.commit()
 
+            # Calculate threshold for "close to target price" (+20%)
+            targetPriceThreshold = notificationTargetPrice * 1.2
+            
+            # Only notify in these two scenarios:
+            # 1. Price is equal or less than target price
+            # 2. Price changed (cheaper) and is close to target price (within +20%)
+            shouldNotify = False
+            notificationMessage = ""
+            
             if alert:
                 originTrainKind = originTrain.kind
                 destinationTrainKind = destinationTrain.kind
                 targetDateStr = datetime.strftime(
                     originTrain.departure_date, "%A %d/%m/%Y")
 
-                # New notifications
-                # Only if price drop
-                if priceChanged and newPrice < oldPrice:
-                    cfg.notification.send(
-                        f"↓↓↓↓ {targetDateStr} {originTrainKind} {origin} - {destinationTrainKind} {destination} {fromOriginAt}-{fromDestinationAt}. From {oldPrice}€ to {newPrice}€")
-                # Only if its a new opportunity with a low price
-                elif newRoundTrip and (newPrice <= notificationTargetPrice):
-                    cfg.notification.send(
-                        f"►►►► {targetDateStr} {originTrainKind} {origin} - {destinationTrainKind} {destination} {fromOriginAt}-{fromDestinationAt}. {newPrice}€")
-                # Notify also if its a new min price
-                if newMinPrice:
-                    cfg.notification.send(
-                        f"🔥🔥🔥🔥 {targetDateStr} {originTrainKind} {origin} - {destinationTrainKind} {destination} {fromOriginAt}-{fromDestinationAt}. Cheapest price was {minPrice}€ now is {roundTrip.total_price}€. New min price!")
-                # Old notifications
-                # if priceChanged and newPrice > oldPrice:
-                #     cfg.notification.send(
-                #         f"↑↑↑↑ {targetDateStr} {origin}-{destination} {fromOriginAt}-{fromDestinationAt}. From {oldPrice}€ to {newPrice}€")
-                # elif priceChanged and newPrice < oldPrice and (newPrice <= notificationTargetPrice):
-                #     cfg.notification.send(
-                #         f"↓↓↓↓ {targetDateStr} {origin}-{destination} {fromOriginAt}-{fromDestinationAt}. From {oldPrice}€ to {newPrice}€")
-                # elif newRoundTrip and (newPrice <= notificationTargetPrice):
-                #     cfg.notification.send(
-                #         f"►►►► {targetDateStr} {origin}-{destination} {fromOriginAt}-{fromDestinationAt}. {newPrice}€")
+                # Scenario 1: Round trip price is equal or less than target price
+                if roundTrip.total_price <= notificationTargetPrice:
+                    shouldNotify = True
+                    if newRoundTrip:
+                        notificationMessage = f"►►►► {targetDateStr} {originTrainKind} {origin} - {destinationTrainKind} {destination} {fromOriginAt}-{fromDestinationAt}. {roundTrip.total_price}€ (Target: {notificationTargetPrice}€)"
+                    else:
+                        notificationMessage = f"🎯 {targetDateStr} {originTrainKind} {origin} - {destinationTrainKind} {destination} {fromOriginAt}-{fromDestinationAt}. {roundTrip.total_price}€ (Target: {notificationTargetPrice}€)"
+                
+                # Scenario 2: Price changed (cheaper) and is close to target price (within +20%)
+                elif priceChanged and newPrice < oldPrice and newPrice <= targetPriceThreshold:
+                    shouldNotify = True
+                    notificationMessage = f"↓↓↓↓ {targetDateStr} {originTrainKind} {origin} - {destinationTrainKind} {destination} {fromOriginAt}-{fromDestinationAt}. From {oldPrice}€ to {newPrice}€ (Close to target: {notificationTargetPrice}€)"
+                
+                if shouldNotify:
+                    cfg.notification.send(notificationMessage)
 
     update_metadata(cfg.db, RoundTrip.__tablename__)
     update_metadata(cfg.db, RoundTripTimeSeries.__tablename__)
