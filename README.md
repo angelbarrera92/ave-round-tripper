@@ -146,6 +146,7 @@ $ apt-get install -y libpq-dev
 - `TRAVEL_TO`: The destination of the trip. Default: `Zaragoza`.
 - `TRAVEL_DAYS`: Number of days to search for. Default: `30`.
 - `TRAVEL_RENFE_PRICE_CHANGE_NOTIFICATION`: Send a notification every time a price changes. Default: `False`.
+- `TRAVEL_SCRAPER_TIMEOUT`: Maximum time in seconds for each scraper operation before timeout. Default: `300` (5 minutes).
 - `ROUND_TRIP_ENABLED`: Check for round trips. Default: `True`.
 - `ROUND_TRIP_NOTIFICATION_MAX_PRICE`: Max price to pay for a round trip. Default: `40`. This is the sum of both prices. 
 - `ROUND_TRIP_ORIGIN_DEPARTURE_TIME`: Time of departure for the round trip. Default: `06:30`. Only accepts one.
@@ -154,6 +155,37 @@ $ apt-get install -y libpq-dev
 - `TRAVEL_HISTORICAL_DATA_DAYS`: Save up to this number of days of historical data. Default: `30`. Useful for analyzing trends.
 
 You will find a couple of `.env` files at the root of the project, so you can start using them right away.
+
+### Scraper Timeout Protection
+
+The application includes built-in protection against scrapers getting stuck or hanging indefinitely. Each scraper operation has a configurable timeout (default: 5 minutes) that automatically terminates the process if it exceeds the specified time limit.
+
+**Key Features:**
+- **Automatic Detection**: Detects when scrapers hang or get stuck on website elements
+- **Configurable Timeout**: Set via `TRAVEL_SCRAPER_TIMEOUT` environment variable (in seconds)
+- **Graceful Exit**: Program exits cleanly when timeout occurs, preventing infinite hanging
+- **Detailed Logging**: Logs timeout events with clear error messages for debugging
+
+**Common Scenarios Where Timeout Protection Helps:**
+- Website loading issues or slow responses
+- Anti-bot protection mechanisms (CAPTCHAs, rate limiting)
+- Browser crashes or WebDriver hangs
+- Network connectivity problems
+- JavaScript execution delays
+
+**Example Configuration:**
+```bash
+# Set timeout to 3 minutes (180 seconds)
+export TRAVEL_SCRAPER_TIMEOUT=180
+
+# Set timeout to 10 minutes (600 seconds) for slower connections
+export TRAVEL_SCRAPER_TIMEOUT=600
+```
+
+If you experience frequent timeouts, consider:
+1. Increasing the timeout value for slower connections
+2. Checking your internet connection stability
+3. Running the scraper during off-peak hours to avoid website congestion
 
 ### Telegram bot and group
 

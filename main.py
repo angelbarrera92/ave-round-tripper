@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta
 from logging import getLevelName, getLogger
 from os import getenv
+import sys
 
 from src.config import RunConfig
 from src.db.clean import clean_old_timeseries
@@ -11,10 +12,40 @@ from src.notifications.console import ConsoleNotification  # Added import
 from src.oportunities.roundtrip import round_trip
 from src.scrapers.renfe import RenfeScraper, RenfeScraperConfig
 from src.scrapers.ouigo import OuigoScraper, OuigoScraperConfig
+from src.utils.timeout import TimeoutHandler, TimeoutError, is_timeout_supported
 
 def clean(runConfig: RunConfig):
     historical_data_days = int(getenv("TRAVEL_HISTORICAL_DATA_DAYS", "30"))
     clean_old_timeseries(runConfig, historical_data_days)
+
+
+def scrape_with_timeout(scraper, config, scraper_name, timeout_seconds=300):
+    """
+    Scrape with timeout detection. Exits the program if scraper gets stuck.
+
+    Args:
+        scraper: The scraper instance
+        config: The scraper configuration
+        scraper_name: Name of the scraper for logging
+        timeout_seconds: Timeout in seconds (default: 5 minutes)
+
+    Returns:
+        Scraping result or None if timeout occurs
+    """
+    try:
+        with TimeoutHandler(timeout_seconds):
+            log.info(f"Starting {scraper_name} scraping with {timeout_seconds}s timeout")
+            result = scraper.scrape(config)
+            log.info(f"{scraper_name} scraping completed successfully")
+            return result
+    except TimeoutError as e:
+        log.error(f"❌ {scraper_name} scraper timed out: {e}")
+        log.error(f"Scraper {scraper_name} got stuck and exceeded {timeout_seconds} seconds timeout")
+        log.error("Exiting program to prevent infinite hanging...")
+        sys.exit(1)
+    except Exception as e:
+        log.error(f"Error in {scraper_name} scraper: {e}")
+        raise
 
 
 def run(runConfig: RunConfig):
@@ -35,6 +66,11 @@ def run(runConfig: RunConfig):
         "ROUND_TRIP_ORIGIN_DEPARTURE_TIME", "06:30,07:05")
     round_trip_destination_departure_times = getenv(
         "ROUND_TRIP_DESTINATION_DEPARTURE_TIME", "15:45,17:45,18:26,20:45")
+
+    # Scraper timeout configuration
+    scraper_timeout = int(getenv("TRAVEL_SCRAPER_TIMEOUT", "300"))  # Default 5 minutes
+    log.info(f"Scraper timeout set to {scraper_timeout} seconds")
+
     travel_start_date = getenv("TRAVEL_START_DATE", None)
     if travel_start_date:
         start_date = datetime.strptime(travel_start_date, "%d/%m/%Y")
@@ -63,7 +99,7 @@ def run(runConfig: RunConfig):
         renfeScrapeConfig = RenfeScraperConfig(
             runConfig, currentDateFormatted, origin_station, destination_station, renfe_price_change_notification)
         try:
-            result = renfe.scrape(renfeScrapeConfig)
+            result = scrape_with_timeout(renfe, renfeScrapeConfig, "Renfe", scraper_timeout)
         except Exception as e:
             log.error(f"Error scraping {currentDateFormatted} from {origin_station} to {destination_station}")
             log.error(e)
@@ -74,7 +110,7 @@ def run(runConfig: RunConfig):
         ouigoScraperConfig = OuigoScraperConfig(
             runConfig, currentDateFormatted, origin_station, destination_station, renfe_price_change_notification)
         try:
-            result = ouigo.scrape(ouigoScraperConfig)
+            result = scrape_with_timeout(ouigo, ouigoScraperConfig, "Ouigo", scraper_timeout)
         except Exception as e:
             log.error(f"Error scraping {currentDateFormatted} from {origin_station} to {destination_station}")
             log.error(e)
@@ -91,7 +127,7 @@ def run(runConfig: RunConfig):
             renfeScrapeConfig = RenfeScraperConfig(
                 runConfig, currentDateFormatted, origin_station, destination_station, renfe_price_change_notification)
             try:
-                result = renfe.scrape(renfeScrapeConfig)
+                result = scrape_with_timeout(renfe, renfeScrapeConfig, "Renfe (return)", scraper_timeout)
             except Exception as e:
                 log.error(f"Error scraping {currentDateFormatted} from {origin_station} to {destination_station}")
                 log.error(e)
@@ -102,7 +138,7 @@ def run(runConfig: RunConfig):
             ouigoScraperConfig = OuigoScraperConfig(
                 runConfig, currentDateFormatted, origin_station, destination_station, renfe_price_change_notification)
             try:
-                result = ouigo.scrape(ouigoScraperConfig)
+                result = scrape_with_timeout(ouigo, ouigoScraperConfig, "Ouigo (return)", scraper_timeout)
             except Exception as e:
                 log.error(f"Error scraping {currentDateFormatted} from {origin_station} to {destination_station}")
                 log.error(e)
@@ -144,6 +180,13 @@ def to_bool(value):
 
 
 if __name__ == "__main__":
+    # Check if timeout functionality is supported on this platform
+    if not is_timeout_supported():
+        print("❌ Error: Timeout protection requires Unix-like system (Linux/macOS)")
+        print("This system doesn't support the required signal.alarm() functionality")
+        print("The scraper timeout protection will not work on this platform")
+        sys.exit(1)
+
     # Init log
     log_level_cfg = getenv("TRAVEL_LOG_LEVEL", "info")
     log = log_setup(getLogger(__file__),
