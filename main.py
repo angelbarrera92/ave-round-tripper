@@ -13,7 +13,7 @@ from src.notifications.console import ConsoleNotification  # Added import
 from src.oportunities.roundtrip import round_trip
 from src.scrapers.renfe import RenfeScraper, RenfeScraperConfig
 from src.scrapers.ouigo import OuigoScraper, OuigoScraperConfig
-from src.utils.timeout import TimeoutHandler, TimeoutError, is_timeout_supported
+from src.utils.aggressive_timeout import TimeoutHandler, TimeoutError, is_timeout_supported, check_timeout_recovery
 from src.utils.recovery import RecoveryManager, RecoveryState, create_recovery_config
 
 def clean(runConfig: RunConfig):
@@ -21,7 +21,7 @@ def clean(runConfig: RunConfig):
     clean_old_timeseries(runConfig, historical_data_days)
 
 
-def scrape_with_timeout(scraper, config, scraper_name, timeout_seconds=300, recovery_manager=None, recovery_state=None):
+def scrape_with_timeout(scraper, config, scraper_name, timeout_seconds=120, recovery_manager=None, recovery_state=None):
     """
     Scrape with timeout detection. Saves recovery state and exits the program if scraper gets stuck.
 
@@ -29,7 +29,7 @@ def scrape_with_timeout(scraper, config, scraper_name, timeout_seconds=300, reco
         scraper: The scraper instance
         config: The scraper configuration
         scraper_name: Name of the scraper for logging
-        timeout_seconds: Timeout in seconds (default: 5 minutes)
+        timeout_seconds: Timeout in seconds (default: 2 minutes)
         recovery_manager: RecoveryManager instance for saving state
         recovery_state: Current recovery state to update
 
@@ -322,6 +322,10 @@ def to_bool(value):
 
 
 if __name__ == "__main__":
+    # Check for previous timeout and recovery info
+    if check_timeout_recovery():
+        print("🔄 Continuing after previous timeout...")
+        
     # Check if timeout functionality is supported on this platform
     if not is_timeout_supported():
         print("❌ Error: Timeout protection requires Unix-like system (Linux/macOS)")
