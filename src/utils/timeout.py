@@ -36,14 +36,15 @@ class AggressiveTimeoutHandler:
             raise TimeoutError(f"Operation timed out after {self.timeout_seconds} seconds")
 
     def _killer_thread(self):
-        """Backup thread that kills the process if signal fails"""
-        time.sleep(self.timeout_seconds + 5)  # 5 second grace period
+        """Backup thread that kills the process if signal fails - ONLY for truly stuck operations"""
+        time.sleep(self.timeout_seconds + 30)  # Give 30 seconds grace period
         if not self.completed:
             elapsed = time.time() - self.start_time if self.start_time else self.timeout_seconds
-            print(f"\n💀 KILLER THREAD: Signal failed, force exiting after {elapsed:.1f}s")
-            print("🔥 This usually means Selenium is blocking signals")
-            print("💣 FORCING IMMEDIATE PROGRAM TERMINATION...")
-            os._exit(1)  # Nuclear option - immediate exit
+            print(f"\n💀 EMERGENCY KILLER: Operation truly stuck after {elapsed:.1f}s")
+            print("🔥 Selenium/WebDriver completely unresponsive")
+            print("💣 EMERGENCY TERMINATION TO PREVENT INFINITE HANG...")
+            print("🔄 Restart the program manually")
+            os._exit(1)  # Nuclear option - only for truly stuck operations
 
     def _watchdog_thread(self):
         """Secondary watchdog with shorter timeout"""

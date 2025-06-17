@@ -69,24 +69,6 @@ def scrape_with_timeout(scraper, config, scraper_name, timeout_seconds=300):
         raise
 
 
-import threading
-import time
-
-
-def create_process_watchdog(timeout_minutes=15):
-    """Create a watchdog thread that kills the process if it runs too long"""
-    def watchdog():
-        time.sleep(timeout_minutes * 60)
-        import os
-        print(f"\n💀 PROCESS WATCHDOG: Program has been running for {timeout_minutes} minutes")
-        print("🚨 This suggests a scraper is completely stuck. Forcing exit...")
-        os._exit(1)
-
-    watchdog_thread = threading.Thread(target=watchdog, daemon=True)
-    watchdog_thread.start()
-    return watchdog_thread
-
-
 def run(runConfig: RunConfig):
     init_time = datetime.now()
     log.debug(f"loop started at {init_time.strftime('%H:%M:%S')}")
@@ -268,10 +250,6 @@ if __name__ == "__main__":
 
     # Create configuration struct
     runConfig = RunConfig(log, db, notification)
-
-    # Start process watchdog (kills process after 15 minutes)
-    watchdog = create_process_watchdog(15)
-    log.info("🐕 Process watchdog started (15 minute maximum runtime)")
 
     # Execute once
     run(runConfig)
