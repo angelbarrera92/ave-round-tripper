@@ -32,20 +32,59 @@ def scrape_with_timeout(scraper, config, scraper_name, timeout_seconds=300):
     Returns:
         Scraping result or None if timeout occurs
     """
+    import time
+    start_time = time.time()
+
     try:
         with TimeoutHandler(timeout_seconds):
-            log.info(f"Starting {scraper_name} scraping with {timeout_seconds}s timeout")
+            log.info(f"🚀 Starting {scraper_name} scraping with {timeout_seconds}s timeout at {time.strftime('%H:%M:%S')}")
+            log.info(f"⏰ Will timeout at {time.strftime('%H:%M:%S', time.localtime(start_time + timeout_seconds))}")
             result = scraper.scrape(config)
-            log.info(f"{scraper_name} scraping completed successfully")
+            elapsed = time.time() - start_time
+            log.info(f"✅ {scraper_name} scraping completed successfully in {elapsed:.1f}s")
             return result
     except TimeoutError as e:
-        log.error(f"❌ {scraper_name} scraper timed out: {e}")
-        log.error(f"Scraper {scraper_name} got stuck and exceeded {timeout_seconds} seconds timeout")
-        log.error("Exiting program to prevent infinite hanging...")
+        elapsed = time.time() - start_time
+        log.error(f"❌ {scraper_name} scraper timed out after {elapsed:.1f}s: {e}")
+        log.error(f"🔥 Scraper {scraper_name} got stuck and exceeded {timeout_seconds} seconds timeout")
+        log.error(f"💀 Current time: {time.strftime('%H:%M:%S')}")
+        log.error("🚨 EXITING PROGRAM TO PREVENT INFINITE HANGING...")
+
+        # Try to cleanup any WebDriver instances
+        try:
+            if hasattr(scraper, '_RenfeScraper__driver') and scraper._RenfeScraper__driver:
+                scraper._RenfeScraper__driver.quit()
+        except:
+            pass
+        try:
+            if hasattr(scraper, '__driver') and scraper.__driver:
+                scraper.__driver.quit()
+        except:
+            pass
+
         sys.exit(1)
     except Exception as e:
-        log.error(f"Error in {scraper_name} scraper: {e}")
+        elapsed = time.time() - start_time
+        log.error(f"❌ Error in {scraper_name} scraper after {elapsed:.1f}s: {e}")
         raise
+
+
+import threading
+import time
+
+
+def create_process_watchdog(timeout_minutes=15):
+    """Create a watchdog thread that kills the process if it runs too long"""
+    def watchdog():
+        time.sleep(timeout_minutes * 60)
+        import os
+        print(f"\n💀 PROCESS WATCHDOG: Program has been running for {timeout_minutes} minutes")
+        print("🚨 This suggests a scraper is completely stuck. Forcing exit...")
+        os._exit(1)
+
+    watchdog_thread = threading.Thread(target=watchdog, daemon=True)
+    watchdog_thread.start()
+    return watchdog_thread
 
 
 def run(runConfig: RunConfig):
@@ -68,8 +107,8 @@ def run(runConfig: RunConfig):
         "ROUND_TRIP_DESTINATION_DEPARTURE_TIME", "15:45,17:45,18:26,20:45")
 
     # Scraper timeout configuration
-    scraper_timeout = int(getenv("TRAVEL_SCRAPER_TIMEOUT", "300"))  # Default 5 minutes
-    log.info(f"Scraper timeout set to {scraper_timeout} seconds")
+    scraper_timeout = int(getenv("TRAVEL_SCRAPER_TIMEOUT", "120"))  # Default 2 minutes (aggressive)
+    log.info(f"⏱️ Scraper timeout set to {scraper_timeout} seconds ({scraper_timeout/60:.1f} minutes)")
 
     travel_start_date = getenv("TRAVEL_START_DATE", None)
     if travel_start_date:
@@ -229,6 +268,10 @@ if __name__ == "__main__":
 
     # Create configuration struct
     runConfig = RunConfig(log, db, notification)
+
+    # Start process watchdog (kills process after 15 minutes)
+    watchdog = create_process_watchdog(15)
+    log.info("🐕 Process watchdog started (15 minute maximum runtime)")
 
     # Execute once
     run(runConfig)
