@@ -27,12 +27,22 @@ class AggressiveTimeoutHandler:
         if not hasattr(signal, 'alarm'):
             raise RuntimeError("Requires Unix-like system")
 
+    def _save_timeout_flag(self):
+        """Save a flag indicating timeout occurred for recovery detection"""
+        try:
+            with open('.timeout_occurred', 'w') as f:
+                f.write(str(int(time.time())))
+        except:
+            pass  # Don't fail the timeout process if flag save fails
+
     def _signal_handler(self, signum, frame):
         """Primary timeout via signal"""
         if not self.completed:
             print(f"\n🚨 SIGNAL TIMEOUT: Operation exceeded {self.timeout_seconds} seconds")
             print("💀 Terminating via signal handler...")
             self.completed = True
+            # Save timeout flag for recovery detection
+            self._save_timeout_flag()
             raise TimeoutError(f"Operation timed out after {self.timeout_seconds} seconds")
 
     def _killer_thread(self):
@@ -44,6 +54,8 @@ class AggressiveTimeoutHandler:
             print("🔥 Selenium/WebDriver completely unresponsive")
             print("💣 EMERGENCY TERMINATION TO PREVENT INFINITE HANG...")
             print("🔄 Restart the program manually")
+            # Save timeout flag for recovery detection
+            self._save_timeout_flag()
             os._exit(1)  # Nuclear option - only for truly stuck operations
 
     def _watchdog_thread(self):
@@ -52,6 +64,8 @@ class AggressiveTimeoutHandler:
         if not self.completed:
             elapsed = time.time() - self.start_time if self.start_time else self.timeout_seconds
             print(f"\n⏰ WATCHDOG: {elapsed:.1f}s elapsed, sending SIGTERM...")
+            # Save timeout flag for recovery detection
+            self._save_timeout_flag()
             try:
                 os.kill(os.getpid(), signal.SIGTERM)
             except:

@@ -2,6 +2,7 @@ from datetime import datetime, timedelta
 from logging import getLevelName, getLogger
 from os import getenv
 import sys
+import os
 
 from src.config import RunConfig
 from src.db.clean import clean_old_timeseries
@@ -13,21 +14,24 @@ from src.oportunities.roundtrip import round_trip
 from src.scrapers.renfe import RenfeScraper, RenfeScraperConfig
 from src.scrapers.ouigo import OuigoScraper, OuigoScraperConfig
 from src.utils.timeout import TimeoutHandler, TimeoutError, is_timeout_supported
+from src.utils.recovery import RecoveryManager, RecoveryState, create_recovery_config
 
 def clean(runConfig: RunConfig):
     historical_data_days = int(getenv("TRAVEL_HISTORICAL_DATA_DAYS", "30"))
     clean_old_timeseries(runConfig, historical_data_days)
 
 
-def scrape_with_timeout(scraper, config, scraper_name, timeout_seconds=300):
+def scrape_with_timeout(scraper, config, scraper_name, timeout_seconds=300, recovery_manager=None, recovery_state=None):
     """
-    Scrape with timeout detection. Exits the program if scraper gets stuck.
+    Scrape with timeout detection. Saves recovery state and exits the program if scraper gets stuck.
 
     Args:
         scraper: The scraper instance
         config: The scraper configuration
         scraper_name: Name of the scraper for logging
         timeout_seconds: Timeout in seconds (default: 5 minutes)
+        recovery_manager: RecoveryManager instance for saving state
+        recovery_state: Current recovery state to update
 
     Returns:
         Scraping result or None if timeout occurs
@@ -36,12 +40,25 @@ def scrape_with_timeout(scraper, config, scraper_name, timeout_seconds=300):
     start_time = time.time()
 
     try:
+        # Save state before starting risky operation
+        if recovery_manager and recovery_state:
+            recovery_state.last_completed_operation = f"Starting {scraper_name}"
+            recovery_state.timestamp = datetime.now().isoformat()
+            recovery_manager.save_state(recovery_state)
+
         with TimeoutHandler(timeout_seconds):
             log.info(f"🚀 Starting {scraper_name} scraping with {timeout_seconds}s timeout at {time.strftime('%H:%M:%S')}")
             log.info(f"⏰ Will timeout at {time.strftime('%H:%M:%S', time.localtime(start_time + timeout_seconds))}")
             result = scraper.scrape(config)
             elapsed = time.time() - start_time
             log.info(f"✅ {scraper_name} scraping completed successfully in {elapsed:.1f}s")
+
+            # Update recovery state after successful completion
+            if recovery_manager and recovery_state:
+                recovery_state.last_completed_operation = f"Completed {scraper_name}"
+                recovery_state.timestamp = datetime.now().isoformat()
+                recovery_manager.save_state(recovery_state)
+
             return result
     except TimeoutError as e:
         elapsed = time.time() - start_time
@@ -49,6 +66,13 @@ def scrape_with_timeout(scraper, config, scraper_name, timeout_seconds=300):
         log.error(f"🔥 Scraper {scraper_name} got stuck and exceeded {timeout_seconds} seconds timeout")
         log.error(f"💀 Current time: {time.strftime('%H:%M:%S')}")
         log.error("🚨 EXITING PROGRAM TO PREVENT INFINITE HANGING...")
+
+        # Save final recovery state before exit
+        if recovery_manager and recovery_state:
+            recovery_state.last_completed_operation = f"TIMEOUT in {scraper_name}"
+            recovery_state.timestamp = datetime.now().isoformat()
+            recovery_manager.save_state(recovery_state)
+            log.info(f"💾 Recovery state saved - will resume from {recovery_state.current_date}")
 
         # Try to cleanup any WebDriver instances
         try:
@@ -100,10 +124,68 @@ def run(runConfig: RunConfig):
     else:
         start_date = datetime.now()
 
+    # Initialize recovery system
+    recovery_manager = RecoveryManager()
+
+    # Create configuration for recovery detection
+    recovery_config = create_recovery_config(
+        travel_from, travel_to, travel_days, travel_start_date,
+        round_trip_enabled, renfe_price_change_notification
+    )
+
+    # Check if we should recover from previous timeout
+    should_recover, recovery_state = recovery_manager.should_recover(recovery_config)
+
+    # Determine starting point
+    if should_recover and recovery_state:
+        log.info("🔄 RECOVERY MODE: Detected timeout restart with same configuration")
+        log.info(f"📅 Resuming from date: {recovery_state.current_date}")
+        log.info(f"📊 Progress: {recovery_state.processed_days}/{recovery_state.total_days} days completed")
+        log.info(f"🕐 Last operation: {recovery_state.last_completed_operation}")
+
+        # Resume from where we left off
+        start_date = datetime.strptime(recovery_state.current_date, "%d/%m/%Y")
+        processed = recovery_state.processed_days
+
+        # If the last operation was starting something, we need to redo that day
+        if "Starting" in recovery_state.last_completed_operation or "TIMEOUT" in recovery_state.last_completed_operation:
+            log.info(f"🔁 Last operation was incomplete - redoing {recovery_state.current_date}")
+            # Don't increment processed, redo this day
+        else:
+            # Last operation completed successfully, move to next day
+            log.info(f"✅ Last operation completed successfully - moving to next day")
+            start_date += timedelta(days=1)
+            processed += 1
+    else:
+        log.info("🚀 NORMAL MODE: Starting fresh scraping process")
+        processed = 0
+
+        # Initialize recovery state
+        recovery_state = RecoveryState(
+            current_date=start_date.strftime("%d/%m/%Y"),
+            processed_days=0,
+            total_days=travel_days,
+            last_completed_operation="Starting fresh",
+            timestamp=datetime.now().isoformat(),
+            config_hash=recovery_manager._calculate_config_hash(recovery_config),
+            travel_from=travel_from,
+            travel_to=travel_to,
+            round_trip_enabled=round_trip_enabled
+        )
+
+    # Update config hash for this run
+    recovery_manager.update_config_hash(recovery_config)
+
+    # Clear any old timeout flags
+    try:
+        if os.path.exists('.timeout_occurred'):
+            os.remove('.timeout_occurred')
+    except:
+        pass
+
     renfe = RenfeScraper()
     ouigo = OuigoScraper()
 
-    processed = 0
     while processed < travel_days:
         inner_init_time = datetime.now()
         log.debug(
@@ -111,6 +193,13 @@ def run(runConfig: RunConfig):
 
         currentDateFormatted = start_date.strftime("%d/%m/%Y")
         log.info(f"processing {currentDateFormatted}")
+
+        # Update recovery state for current date
+        recovery_state.current_date = currentDateFormatted
+        recovery_state.processed_days = processed
+        recovery_state.last_completed_operation = f"Processing date {currentDateFormatted}"
+        recovery_state.timestamp = datetime.now().isoformat()
+        recovery_manager.save_state(recovery_state)
 
         # Trains From Origin -> To Destination
         origin_station = travel_from
@@ -120,23 +209,33 @@ def run(runConfig: RunConfig):
         renfeScrapeConfig = RenfeScraperConfig(
             runConfig, currentDateFormatted, origin_station, destination_station, renfe_price_change_notification)
         try:
-            result = scrape_with_timeout(renfe, renfeScrapeConfig, "Renfe", scraper_timeout)
+            result = scrape_with_timeout(renfe, renfeScrapeConfig, "Renfe", scraper_timeout, recovery_manager, recovery_state)
         except Exception as e:
             log.error(f"Error scraping {currentDateFormatted} from {origin_station} to {destination_station}")
             log.error(e)
             exit(1)
         renfe.save(renfeScrapeConfig, result)
 
+        # Update recovery state after Renfe completion
+        recovery_state.last_completed_operation = f"Completed Renfe for {currentDateFormatted}"
+        recovery_state.timestamp = datetime.now().isoformat()
+        recovery_manager.save_state(recovery_state)
+
         # Ouigo
         ouigoScraperConfig = OuigoScraperConfig(
             runConfig, currentDateFormatted, origin_station, destination_station, renfe_price_change_notification)
         try:
-            result = scrape_with_timeout(ouigo, ouigoScraperConfig, "Ouigo", scraper_timeout)
+            result = scrape_with_timeout(ouigo, ouigoScraperConfig, "Ouigo", scraper_timeout, recovery_manager, recovery_state)
         except Exception as e:
             log.error(f"Error scraping {currentDateFormatted} from {origin_station} to {destination_station}")
             log.error(e)
             exit(1)
         ouigo.save(ouigoScraperConfig, result)
+
+        # Update recovery state after Ouigo completion
+        recovery_state.last_completed_operation = f"Completed Ouigo for {currentDateFormatted}"
+        recovery_state.timestamp = datetime.now().isoformat()
+        recovery_manager.save_state(recovery_state)
 
 
         if round_trip_enabled:
@@ -148,23 +247,33 @@ def run(runConfig: RunConfig):
             renfeScrapeConfig = RenfeScraperConfig(
                 runConfig, currentDateFormatted, origin_station, destination_station, renfe_price_change_notification)
             try:
-                result = scrape_with_timeout(renfe, renfeScrapeConfig, "Renfe (return)", scraper_timeout)
+                result = scrape_with_timeout(renfe, renfeScrapeConfig, "Renfe (return)", scraper_timeout, recovery_manager, recovery_state)
             except Exception as e:
                 log.error(f"Error scraping {currentDateFormatted} from {origin_station} to {destination_station}")
                 log.error(e)
                 exit(1)
             renfe.save(renfeScrapeConfig, result)
 
+            # Update recovery state after Renfe return completion
+            recovery_state.last_completed_operation = f"Completed Renfe return for {currentDateFormatted}"
+            recovery_state.timestamp = datetime.now().isoformat()
+            recovery_manager.save_state(recovery_state)
+
             # Ouigo
             ouigoScraperConfig = OuigoScraperConfig(
                 runConfig, currentDateFormatted, origin_station, destination_station, renfe_price_change_notification)
             try:
-                result = scrape_with_timeout(ouigo, ouigoScraperConfig, "Ouigo (return)", scraper_timeout)
+                result = scrape_with_timeout(ouigo, ouigoScraperConfig, "Ouigo (return)", scraper_timeout, recovery_manager, recovery_state)
             except Exception as e:
                 log.error(f"Error scraping {currentDateFormatted} from {origin_station} to {destination_station}")
                 log.error(e)
                 exit(1)
             ouigo.save(ouigoScraperConfig, result)
+
+            # Update recovery state after Ouigo return completion
+            recovery_state.last_completed_operation = f"Completed Ouigo return for {currentDateFormatted}"
+            recovery_state.timestamp = datetime.now().isoformat()
+            recovery_manager.save_state(recovery_state)
 
             # Check Round Trips oportunities
             for round_trip_origin_departure_time in round_trip_origin_departure_times.split(","):
@@ -172,8 +281,16 @@ def run(runConfig: RunConfig):
                     round_trip(runConfig, start_date, travel_from, round_trip_origin_departure_time, travel_to,
                             round_trip_destination_departure_time, round_trip_notification_max_price)
 
+        # Mark day as fully completed
         processed += 1
         start_date += timedelta(days=1)
+
+        # Update recovery state after day completion
+        recovery_state.processed_days = processed
+        recovery_state.last_completed_operation = f"Completed all scrapers for {currentDateFormatted}"
+        recovery_state.timestamp = datetime.now().isoformat()
+        recovery_manager.save_state(recovery_state)
+
         log.info(f"{processed}/{travel_days} days processed")
 
         inner_end_time = datetime.now()
@@ -181,6 +298,10 @@ def run(runConfig: RunConfig):
             f"inner loop finished at {inner_end_time.strftime('%H:%M:%S')}")
         log.info(
             f"inner loop toke: {abs((inner_end_time-inner_init_time).seconds)} seconds")
+
+    # Clear recovery state when all processing is complete
+    recovery_manager.clear_state()
+    log.info("🏁 All scraping completed successfully - recovery state cleared")
 
     end_time = datetime.now()
     log.debug(f"loop finished at {end_time.strftime('%H:%M:%S')}")
