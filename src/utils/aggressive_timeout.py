@@ -36,14 +36,68 @@ class AggressiveTimeoutHandler:
         except:
             pass
 
+    def _force_kill_browsers(self):
+        """Force kill all Chrome/WebDriver processes"""
+        try:
+            # First, check what Chrome processes are running
+            try:
+                result = subprocess.run(['pgrep', '-f', 'chrome'], capture_output=True, text=True)
+                if result.stdout.strip():
+                    print(f"📋 Found Chrome processes: {result.stdout.strip().replace(chr(10), ', ')}")
+                else:
+                    print("ℹ️ No Chrome processes found")
+            except:
+                pass
+
+            # Kill all Chrome processes
+            subprocess.run(['pkill', '-f', 'chrome'], check=False, capture_output=True)
+            subprocess.run(['pkill', '-f', 'chromium'], check=False, capture_output=True)
+            subprocess.run(['pkill', '-f', 'chromedriver'], check=False, capture_output=True)
+            subprocess.run(['pkill', '-f', 'geckodriver'], check=False, capture_output=True)
+            print("🔥 Forcefully killed all browser processes")
+            
+            # Give processes a moment to die
+            time.sleep(1)
+            
+            # Verify they're gone
+            try:
+                result = subprocess.run(['pgrep', '-f', 'chrome'], capture_output=True, text=True)
+                if result.stdout.strip():
+                    print(f"⚠️ Some Chrome processes still running: {result.stdout.strip().replace(chr(10), ', ')}")
+                    # Try more aggressive killing
+                    for pid in result.stdout.strip().split():
+                        try:
+                            subprocess.run(['kill', '-9', pid], check=False, capture_output=True)
+                        except:
+                            pass
+                    print("💀 Used kill -9 on remaining processes")
+                else:
+                    print("✅ All Chrome processes successfully terminated")
+            except:
+                pass
+                
+        except Exception as e:
+            print(f"⚠️ Error killing browser processes: {e}")
+            # If pkill fails, try a more aggressive approach
+            try:
+                subprocess.run(['killall', 'Google Chrome'], check=False, capture_output=True)
+                subprocess.run(['killall', 'chrome'], check=False, capture_output=True)
+                subprocess.run(['killall', 'chromedriver'], check=False, capture_output=True)
+                print("🔥 Used killall as fallback")
+            except:
+                print("⚠️ All browser killing attempts failed")
+                pass
+
     def _signal_handler(self, signum, frame):
         """Primary timeout via signal - immediate exception"""
         if not self.completed:
             elapsed = time.time() - self.start_time if self.start_time else self.timeout_seconds
             print(f"\n🚨 SIGNAL TIMEOUT: Operation exceeded {elapsed:.1f} seconds")
             print("💀 Terminating via signal handler...")
+            print("🔥 Force killing all Chrome/WebDriver processes...")
             self.completed = True
             self._save_timeout_flag()
+            self._force_kill_browsers()
             raise TimeoutError(f"Operation timed out after {elapsed:.1f} seconds")
 
     def _watchdog_thread(self):
@@ -53,7 +107,9 @@ class AggressiveTimeoutHandler:
             elapsed = time.time() - self.start_time if self.start_time else self.timeout_seconds + 5
             print(f"\n⚠️  WATCHDOG: Signal timeout failed after {elapsed:.1f}s")
             print("📡 Sending SIGTERM to process...")
+            print("🔥 Force killing browsers again...")
             self._save_timeout_flag()
+            self._force_kill_browsers()
             try:
                 os.kill(self.pid, signal.SIGTERM)
             except:
@@ -66,7 +122,9 @@ class AggressiveTimeoutHandler:
             elapsed = time.time() - self.start_time if self.start_time else self.timeout_seconds + 10
             print(f"\n💀 KILLER: SIGTERM failed after {elapsed:.1f}s")
             print("🔥 Sending SIGKILL - immediate termination...")
+            print("💣 Final browser cleanup...")
             self._save_timeout_flag()
+            self._force_kill_browsers()
             try:
                 os.kill(self.pid, signal.SIGKILL)
             except:
@@ -93,6 +151,7 @@ class AggressiveTimeoutHandler:
         self.pid = os.getpid()
 
         print(f"🕐 Starting aggressive timeout protection: {self.timeout_seconds}s (PID: {self.pid})")
+        print("🔥 Enhanced browser process killing enabled")
 
         # Method 1: Signal alarm (primary - immediate exception)
         self.old_handler = signal.signal(signal.SIGALRM, self._signal_handler)

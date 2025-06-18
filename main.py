@@ -3,6 +3,7 @@ from logging import getLevelName, getLogger
 from os import getenv
 import sys
 import os
+import subprocess
 
 from src.config import RunConfig
 from src.db.clean import clean_old_timeseries
@@ -74,17 +75,55 @@ def scrape_with_timeout(scraper, config, scraper_name, timeout_seconds=120, reco
             recovery_manager.save_state(recovery_state)
             log.info(f"💾 Recovery state saved - will resume from {recovery_state.current_date}")
 
-        # Try to cleanup any WebDriver instances
+        # Try to cleanup any WebDriver instances AGGRESSIVELY
+        def force_kill_browsers():
+            """Force kill all Chrome/WebDriver processes"""
+            import subprocess
+            try:
+                # Check what Chrome processes are running first
+                result = subprocess.run(['pgrep', '-f', 'chrome'], capture_output=True, text=True)
+                if result.stdout.strip():
+                    log.info(f"📋 Found Chrome processes to kill: {result.stdout.strip().replace(chr(10), ', ')}")
+                
+                # Kill all Chrome processes
+                subprocess.run(['pkill', '-f', 'chrome'], check=False, capture_output=True)
+                subprocess.run(['pkill', '-f', 'chromium'], check=False, capture_output=True)
+                subprocess.run(['pkill', '-f', 'chromedriver'], check=False, capture_output=True)
+                log.info("🔥 Forcefully killed all browser processes via pkill")
+                
+                # Verify they're gone
+                result = subprocess.run(['pgrep', '-f', 'chrome'], capture_output=True, text=True)
+                if result.stdout.strip():
+                    log.warning(f"⚠️ Some Chrome processes still running, using kill -9")
+                    for pid in result.stdout.strip().split():
+                        try:
+                            subprocess.run(['kill', '-9', pid], check=False, capture_output=True)
+                        except:
+                            pass
+                else:
+                    log.info("✅ All Chrome processes successfully terminated")
+                    
+            except Exception as e:
+                log.debug(f"pkill failed: {e}")
+                try:
+                    subprocess.run(['killall', 'Google Chrome'], check=False, capture_output=True)
+                    subprocess.run(['killall', 'chrome'], check=False, capture_output=True)
+                    subprocess.run(['killall', 'chromedriver'], check=False, capture_output=True)
+                    log.info("🔥 Used killall as fallback")
+                except:
+                    log.debug("All browser killing attempts failed")
+                    pass
+
         try:
             if hasattr(scraper, '_RenfeScraper__driver') and scraper._RenfeScraper__driver:
                 scraper._RenfeScraper__driver.quit()
-        except:
-            pass
-        try:
             if hasattr(scraper, '__driver') and scraper.__driver:
                 scraper.__driver.quit()
         except:
             pass
+        
+        # Force kill all browser processes
+        force_kill_browsers()
 
         sys.exit(1)
     except Exception as e:
