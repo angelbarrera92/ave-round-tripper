@@ -45,10 +45,43 @@ class RenfeScraper(Scraper):
 
     def __del__(self):
         try:
-            if self.__driver:
-                self.__driver.quit()
+            self._cleanup_driver()
         except:
             pass
+
+    def _cleanup_driver(self):
+        """Safely cleanup the WebDriver instance"""
+        if self.__driver:
+            try:
+                # Close all windows first
+                for handle in self.__driver.window_handles:
+                    self.__driver.switch_to.window(handle)
+                    self.__driver.close()
+            except:
+                pass
+            
+            try:
+                # Quit the driver
+                self.__driver.quit()
+            except:
+                pass
+            
+            try:
+                # Force close any remaining browser processes from this driver
+                if hasattr(self.__driver, 'service') and hasattr(self.__driver.service, 'process'):
+                    process = self.__driver.service.process
+                    if process and process.poll() is None:
+                        process.terminate()
+                        # Wait a moment for graceful shutdown
+                        import time
+                        time.sleep(1)
+                        if process.poll() is None:
+                            process.kill()
+            except:
+                pass
+            
+            finally:
+                self.__driver = None
 
     def _create_driver(self):
         """Create a fresh Chrome driver instance"""
@@ -783,9 +816,7 @@ class RenfeScraper(Scraper):
             # Clean up driver after each scrape to prevent session issues
             cfg.runConfig.log.debug("cleaning up browser instance")
             try:
-                if self.__driver:
-                    self.__driver.quit()
-                    self.__driver = None
+                self._cleanup_driver()
             except:
                 pass
         return result

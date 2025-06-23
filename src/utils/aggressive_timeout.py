@@ -37,55 +37,99 @@ class AggressiveTimeoutHandler:
             pass
 
     def _force_kill_browsers(self):
-        """Force kill all Chrome/WebDriver processes"""
+        """Force kill all Chrome/WebDriver processes with improved targeting"""
         try:
-            # First, check what Chrome processes are running
+            # Save PIDs of processes we find first
+            chrome_pids = []
+            webdriver_pids = []
+            
             try:
-                result = subprocess.run(['pgrep', '-f', 'chrome'], capture_output=True, text=True)
+                # Find Chrome processes launched by this specific process
+                result = subprocess.run(['pgrep', '-f', 'chrome.*--headless'], capture_output=True, text=True)
                 if result.stdout.strip():
-                    print(f"📋 Found Chrome processes: {result.stdout.strip().replace(chr(10), ', ')}")
-                else:
-                    print("ℹ️ No Chrome processes found")
+                    chrome_pids = result.stdout.strip().split('\n')
+                    print(f"📋 Found headless Chrome processes: {', '.join(chrome_pids)}")
+                
+                # Find chromedriver processes
+                result = subprocess.run(['pgrep', '-f', 'chromedriver'], capture_output=True, text=True)
+                if result.stdout.strip():
+                    webdriver_pids = result.stdout.strip().split('\n')
+                    print(f"📋 Found ChromeDriver processes: {', '.join(webdriver_pids)}")
+                    
+                if not chrome_pids and not webdriver_pids:
+                    print("ℹ️ No browser processes found to kill")
+                    return
+                    
+            except Exception as e:
+                print(f"⚠️ Error detecting browser processes: {e}")
+                # Fallback to general approach
+                chrome_pids = []
+                webdriver_pids = []
+
+            # Step 1: Try SIGTERM first (graceful shutdown)
+            all_pids = chrome_pids + webdriver_pids
+            if all_pids:
+                print(f"🔄 Sending SIGTERM to {len(all_pids)} browser processes...")
+                for pid in all_pids:
+                    try:
+                        subprocess.run(['kill', '-TERM', pid], check=False, capture_output=True)
+                    except:
+                        pass
+                
+                # Wait for graceful shutdown
+                time.sleep(3)
+
+            # Step 2: Check what's still running and use SIGKILL
+            still_running = []
+            for pid in all_pids:
+                try:
+                    # Check if process still exists
+                    subprocess.run(['kill', '-0', pid], check=True, capture_output=True)
+                    still_running.append(pid)
+                except subprocess.CalledProcessError:
+                    # Process doesn't exist anymore
+                    pass
+            
+            if still_running:
+                print(f"💀 Force killing {len(still_running)} stubborn processes with SIGKILL...")
+                for pid in still_running:
+                    try:
+                        subprocess.run(['kill', '-9', pid], check=False, capture_output=True)
+                    except:
+                        pass
+                        
+                # Final wait
+                time.sleep(2)
+            
+            # Step 3: Fallback to pkill if specific PIDs didn't work
+            try:
+                subprocess.run(['pkill', '-9', '-f', 'chrome.*--headless'], check=False, capture_output=True)
+                subprocess.run(['pkill', '-9', '-f', 'chromedriver'], check=False, capture_output=True)
+                print("🔥 Used pkill as fallback for any remaining processes")
             except:
                 pass
 
-            # Kill all Chrome processes
-            subprocess.run(['pkill', '-f', 'chrome'], check=False, capture_output=True)
-            subprocess.run(['pkill', '-f', 'chromium'], check=False, capture_output=True)
-            subprocess.run(['pkill', '-f', 'chromedriver'], check=False, capture_output=True)
-            subprocess.run(['pkill', '-f', 'geckodriver'], check=False, capture_output=True)
-            print("🔥 Forcefully killed all browser processes")
-            
-            # Give processes a moment to die
-            time.sleep(1)
-            
-            # Verify they're gone
+            # Final verification
             try:
-                result = subprocess.run(['pgrep', '-f', 'chrome'], capture_output=True, text=True)
+                result = subprocess.run(['pgrep', '-f', 'chrome.*--headless'], capture_output=True, text=True)
                 if result.stdout.strip():
-                    print(f"⚠️ Some Chrome processes still running: {result.stdout.strip().replace(chr(10), ', ')}")
-                    # Try more aggressive killing
-                    for pid in result.stdout.strip().split():
-                        try:
-                            subprocess.run(['kill', '-9', pid], check=False, capture_output=True)
-                        except:
-                            pass
-                    print("💀 Used kill -9 on remaining processes")
+                    remaining = result.stdout.strip().replace('\n', ', ')
+                    print(f"⚠️ Some browser processes still running: {remaining}")
                 else:
-                    print("✅ All Chrome processes successfully terminated")
+                    print("✅ All browser processes successfully terminated")
             except:
-                pass
+                print("✅ Browser process cleanup completed")
                 
         except Exception as e:
-            print(f"⚠️ Error killing browser processes: {e}")
-            # If pkill fails, try a more aggressive approach
+            print(f"⚠️ Error in browser cleanup: {e}")
+            # Last resort - nuclear option
             try:
-                subprocess.run(['killall', 'Google Chrome'], check=False, capture_output=True)
-                subprocess.run(['killall', 'chrome'], check=False, capture_output=True)
-                subprocess.run(['killall', 'chromedriver'], check=False, capture_output=True)
-                print("🔥 Used killall as fallback")
+                subprocess.run(['killall', '-9', 'Google Chrome'], check=False, capture_output=True, timeout=5)
+                subprocess.run(['killall', '-9', 'chrome'], check=False, capture_output=True, timeout=5)
+                subprocess.run(['killall', '-9', 'chromedriver'], check=False, capture_output=True, timeout=5)
+                print("🔥 Used killall as nuclear fallback")
             except:
-                print("⚠️ All browser killing attempts failed")
+                print("⚠️ All browser killing attempts exhausted")
                 pass
 
     def _signal_handler(self, signum, frame):

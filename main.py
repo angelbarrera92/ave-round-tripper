@@ -4,6 +4,7 @@ from os import getenv
 import sys
 import os
 import subprocess
+import time
 
 from src.config import RunConfig
 from src.db.clean import clean_old_timeseries
@@ -37,7 +38,6 @@ def scrape_with_timeout(scraper, config, scraper_name, timeout_seconds=120, reco
     Returns:
         Scraping result or None if timeout occurs
     """
-    import time
     start_time = time.time()
 
     try:
@@ -66,65 +66,16 @@ def scrape_with_timeout(scraper, config, scraper_name, timeout_seconds=120, reco
         log.error(f"❌ {scraper_name} scraper timed out after {elapsed:.1f}s: {e}")
         log.error(f"🔥 Scraper {scraper_name} got stuck and exceeded {timeout_seconds} seconds timeout")
         log.error(f"💀 Current time: {time.strftime('%H:%M:%S')}")
-        log.error("🚨 EXITING PROGRAM TO PREVENT INFINITE HANGING...")
-
-        # Save final recovery state before exit
+        log.error("🚨 EXITING PROGRAM TO PREVENT INFINITE HANGING...")        # Save final recovery state before exit
         if recovery_manager and recovery_state:
             recovery_state.last_completed_operation = f"TIMEOUT in {scraper_name}"
             recovery_state.timestamp = datetime.now().isoformat()
             recovery_manager.save_state(recovery_state)
             log.info(f"💾 Recovery state saved - will resume from {recovery_state.current_date}")
 
-        # Try to cleanup any WebDriver instances AGGRESSIVELY
-        def force_kill_browsers():
-            """Force kill all Chrome/WebDriver processes"""
-            import subprocess
-            try:
-                # Check what Chrome processes are running first
-                result = subprocess.run(['pgrep', '-f', 'chrome'], capture_output=True, text=True)
-                if result.stdout.strip():
-                    log.info(f"📋 Found Chrome processes to kill: {result.stdout.strip().replace(chr(10), ', ')}")
-                
-                # Kill all Chrome processes
-                subprocess.run(['pkill', '-f', 'chrome'], check=False, capture_output=True)
-                subprocess.run(['pkill', '-f', 'chromium'], check=False, capture_output=True)
-                subprocess.run(['pkill', '-f', 'chromedriver'], check=False, capture_output=True)
-                log.info("🔥 Forcefully killed all browser processes via pkill")
-                
-                # Verify they're gone
-                result = subprocess.run(['pgrep', '-f', 'chrome'], capture_output=True, text=True)
-                if result.stdout.strip():
-                    log.warning(f"⚠️ Some Chrome processes still running, using kill -9")
-                    for pid in result.stdout.strip().split():
-                        try:
-                            subprocess.run(['kill', '-9', pid], check=False, capture_output=True)
-                        except:
-                            pass
-                else:
-                    log.info("✅ All Chrome processes successfully terminated")
-                    
-            except Exception as e:
-                log.debug(f"pkill failed: {e}")
-                try:
-                    subprocess.run(['killall', 'Google Chrome'], check=False, capture_output=True)
-                    subprocess.run(['killall', 'chrome'], check=False, capture_output=True)
-                    subprocess.run(['killall', 'chromedriver'], check=False, capture_output=True)
-                    log.info("🔥 Used killall as fallback")
-                except:
-                    log.debug("All browser killing attempts failed")
-                    pass
-
-        try:
-            if hasattr(scraper, '_RenfeScraper__driver') and scraper._RenfeScraper__driver:
-                scraper._RenfeScraper__driver.quit()
-            if hasattr(scraper, '__driver') and scraper.__driver:
-                scraper.__driver.quit()
-        except:
-            pass
-        
-        # Force kill all browser processes
-        force_kill_browsers()
-
+        # Note: Browser cleanup is now handled by the AggressiveTimeoutHandler
+        log.error("🚨 Timeout handler has killed browser processes")
+        log.error("🔄 Program will exit - recovery state saved")
         sys.exit(1)
     except Exception as e:
         elapsed = time.time() - start_time
